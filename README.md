@@ -4,7 +4,7 @@
 
 - **EXPLICIT version (RECOMMENDED)** - [GithHub - Explicit](https://github.com/anh-vudinh/-anh-vudinh-LM-Studio_Plugin-Persisting-Memories-Explicit) | [LMStudio](https://lmstudio.ai/anhuvdinh/persisting-memories-explicit)
 
-- ***Model dependent version (THIS VERSION) has not yet been made compatible with the latest version of this plugin. I will update this Readme when it has***
+- ***Model dependent version (THIS VERSION) has not yet been made compatible with the latest version of the companion plugin. I will update this Readme when it has***
 
 - **Optional Companion Plugin (v1.0 works with this plugin's current version but is missing latest features/optimizations)** - [GithHub - Context Cleanup](https://github.com/anh-vudinh/LM-Studio_Context-Cleanup) | [LMStudio](https://lmstudio.ai/anhuvdinh/context-cleanup)
 
