@@ -1,6 +1,13 @@
 # Persisting Memories Plugin
 
-- [GithHub](https://github.com/anh-vudinh/LM-Studio_Plugin-Persisting-Memories)
+- **This Plugin (model behavior dependent)** - [GithHub](https://github.com/anh-vudinh/LM-Studio_Plugin-Persisting-Memories) | [LMStudio](https://lmstudio.ai/anhuvdinh/persisting-memories)
+
+- **EXPLICIT version (RECOMMENDED)** - [GithHub - Explicit](https://github.com/anh-vudinh/-anh-vudinh-LM-Studio_Plugin-Persisting-Memories-Explicit) | [LMStudio](https://lmstudio.ai/anhuvdinh/persisting-memories-explicit)
+
+- ***Model dependent version (THIS VERSION) has not yet been made compatible with the latest version of this plugin. I will update this Readme when it has***
+
+- **Optional Companion Plugin (v1.0 works with this plugin's current version but is missing latest features/optimizations)** - [GithHub - Context Cleanup](https://github.com/anh-vudinh/LM-Studio_Context-Cleanup) | [LMStudio](https://lmstudio.ai/anhuvdinh/context-cleanup)
+
 
 Persisting Memories Plugin is an LM Studio plugin that lets users preserve selected assistant responses as reusable memory seeds and inject those memories into future conversations. It stores memories as local JSON files, organizes them by category, and uses prompt preprocessing to add selected memories to the active prompt when needed.
 Tested working on Windows 11 Pro 25H2 - LM Studio 0.4.24
