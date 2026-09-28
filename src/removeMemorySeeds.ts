@@ -55,13 +55,6 @@ export async function removeMemorySeeds(
 
                 const latestConversation = JSON.parse(latestJson);
 
-        // DEBUG: snapshot what CC is about to edit
-        await writeFile(
-            `${conversationFile}.pm-before-edit.json`,
-            JSON.stringify(latestConversation, null, 2),
-            "utf-8",
-        );
-
                 if (cleanupAllSeeds === true) {
 
                     await removeAllMemoryWrappers(
@@ -75,17 +68,6 @@ export async function removeMemorySeeds(
                         memorySeedsToRemove,
                     );
                 }
-
-        const finalJson = JSON.stringify(
-            latestConversation,
-            null,
-            2,
-        );
-        await writeFile(
-            `${conversationFile}.pm-final-write.json`,
-            finalJson,
-            "utf-8",
-        );
 
                 await writeFile(
                     conversationFile,
