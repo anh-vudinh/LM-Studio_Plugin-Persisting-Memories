@@ -4,8 +4,6 @@ import { normalizeJsonFileName } from "./promptPreprocessor"
 let currentMemorySeedsPool: readonly string[] = [];
 let currentMemorySeedsSelected: readonly string[] = [];
 let currentConversationFileName = "";
-let saveMemoryNumber: number | null = null;
-const lockFileOwnership = new Map<string, boolean | null>();
 
 export function createConfig(
     memorySeedsPool: readonly string[],
@@ -93,6 +91,14 @@ export function setConfigSchematics({
     );
 }
 
+// ============================================================
+// Save Memory Parameters States (No guarantee these states remain alive through subsequent turns)
+// ============================================================
+
+let saveMemoryNumber: number | null = null;
+let saveMemoryCategory: string | null = null;
+let saveMemoryName: string | null = null;
+
 export function setSaveMemoryNumber(value: number | null): void {
     saveMemoryNumber = value;
 }
@@ -101,15 +107,37 @@ export function getSaveMemoryNumber(): number | null {
     return saveMemoryNumber;
 }
 
-export function setLockFileOriginatesFromThisPlugin(
-    lockFile: string,
-    value: boolean | null,
-): void {
-    lockFileOwnership.set(lockFile, value);
+export function setSaveMemoryCategory(value: string | null): void {
+    saveMemoryCategory = value;
 }
 
-export function getLockFileOriginatesFromThisPlugin(
-    lockFile: string,
-): boolean | null {
-    return lockFileOwnership.get(lockFile) ?? null;
+export function getSaveMemoryCategory(): string | null {
+    return saveMemoryCategory;
+}
+
+export function setSaveMemoryName(value: string | null): void {
+    saveMemoryName = value;
+}
+
+export function getSaveMemoryName(): string | null {
+    return saveMemoryName;
+}
+
+export function resetSaveMemoryParameters(): void {
+    saveMemoryNumber = null;
+    saveMemoryCategory = null;
+    saveMemoryName = null;
+}
+
+// ============================================================
+// Current State Of User Trying To Remove Memories
+// ============================================================
+let isRemovingMemorySeedsQueued = false;
+
+export function setIsRemovingMemorySeedsQueued(value: boolean): void {
+    isRemovingMemorySeedsQueued = value;
+}
+
+export function getIsRemovingMemorySeedsQueued(): boolean {
+    return isRemovingMemorySeedsQueued;
 }

@@ -1,14 +1,9 @@
 import { memoryStore } from "./memoryStore";
-import { join, } from "node:path";
-import { writeFile, readFile, unlink, stat } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { setConfigSchematics } from "./config";
+import { normalizeJsonFileName, maybeCreateACoordinationReadyFileAndAcquireLockFile } from "./promptPreprocessor"
 import { removeMemorySeedFromSelected, updateMemorySeedsSelected } from "./memorySession";
-import { 
-    setConfigSchematics,
-    getLockFileOriginatesFromThisPlugin,
-    setLockFileOriginatesFromThisPlugin,
- } from "./config";
-import { acquireLock } from "./promptPreprocessor"
+import { writeFile, readFile } from "node:fs/promises";
+import { join } from "node:path";
 
 export async function removeMemorySeeds(
     conversationFileName: string,
@@ -28,7 +23,7 @@ export async function removeMemorySeeds(
 
         const conversationFile = join(
             conversationDirectory,
-            conversationFileName,
+            normalizeJsonFileName(conversationFileName),
         );
         
         // Prepare json file to be readable and assign to variable
@@ -39,36 +34,20 @@ export async function removeMemorySeeds(
 
         const conversation = JSON.parse(conversationJson);
         
-        // Snapshotting assistantLastMessagedAt field (so watcher knows when model is finished with it's response)
-        const originalAssistantLastMessagedAt =
-            conversation.assistantLastMessagedAt;
-
         // This will help regulate the timings of multiple polling plugins.
         // Needed to play with my context cleanup plugin.
         // https://github.com/anh-vudinh/LM-Studio_Context-Cleanup
-        // If using with context-cleanup plugin, which already waits the 2000ms
-        // we dont need to wait 2000ms here.
-        const lockFile = `${conversationFile}.lock`;
+        // If using with context-cleanup plugin.
+        // Passing the timered function over to be executed by maybeCreate...()
+        await maybeCreateACoordinationReadyFileAndAcquireLockFile(
+            conversation,
+            conversationFile,
+            "removeMemorySeeds",
+            async () => {
 
-        // Remove stale lock files older than 10 seconds
-        // My context cleanup plugin is responsible for it's own removal
-        // but this is just a safety measure incase that plugin was unable to
-        // remove its lock file.
-        await acquireLock(lockFile);
+                // This entire callback happens later,
+                // after assistantLastMessagedAt changes.
 
-        // let lockWasPresent = false;
-
-        const lockOriginatesFromThisPlugin =
-            getLockFileOriginatesFromThisPlugin(lockFile);
-
-        const pollInterval = lockOriginatesFromThisPlugin === false
-                ? 100
-                : 500;
-
-        // Initiated polling until assistantLastMessagedAt value changes
-        // then initiate the conversation json overwrite
-        const pollForAssistantUpdate = setInterval(async () => {
-            try {
                 const latestJson = await readFile(
                     conversationFile,
                     "utf-8",
@@ -76,93 +55,80 @@ export async function removeMemorySeeds(
 
                 const latestConversation = JSON.parse(latestJson);
 
-                // const lockExists = existsSync(lockFile);
-                
-                // if (lockExists) {
-                //     lockWasPresent = true;
-                // }
+        // DEBUG: snapshot what CC is about to edit
+        await writeFile(
+            `${conversationFile}.pm-before-edit.json`,
+            JSON.stringify(latestConversation, null, 2),
+            "utf-8",
+        );
 
-                // if (latestConversation.assistantLastMessagedAt !== originalAssistantLastMessagedAt && 
-                //     lockExists === false
-                // ) {
-                if (latestConversation.assistantLastMessagedAt !== originalAssistantLastMessagedAt) {
+                if (cleanupAllSeeds === true) {
 
-                    clearInterval(pollForAssistantUpdate);
+                    await removeAllMemoryWrappers(
+                        latestConversation,
+                    );
 
-                    // false = another plugin created the lock → 20ms
-                    // true/null = this plugin created it or no lock was present → 2000ms
-                    const delay =
-                        getLockFileOriginatesFromThisPlugin(lockFile) === false
-                            ? 100
-                            : 2000;
-                
-                    // This timeout is to circumvent LM Studio's behavior
-                    setTimeout(async () => {
-                        try {
-                            const latestJson = await readFile(
-                                conversationFile,
-                                "utf-8",
-                            );
+                } else {
 
-                            const latestConversation = JSON.parse(latestJson);
-
-                            // Quick clean of all memory seeds
-                            if (cleanupAllSeeds === true) {
-                                removeAllMemoryWrappers(latestConversation);
-
-                                await writeFile(
-                                    conversationFile,
-                                    JSON.stringify(latestConversation, null, 2),
-                                    "utf-8",
-                                );
-
-                                updateMemorySeedsSelected([]);
-                                setConfigSchematics({
-                                    memorySeedsSelected: [],
-                                });
-                            } else {
-                                const memorySeedsRemoved = await memorySeedsCleanup(
-                                    conversationFile,
-                                    latestConversation,
-                                    memorySeedsToRemove,
-                                );
-
-                                const memorySeedsStillValid = validMemorySeedsSelected.filter(
-                                    (memorySeed) => !memorySeedsRemoved.includes(memorySeed),
-                                );
-
-                                updateMemorySeedsSelected(memorySeedsStillValid);
-
-                                setConfigSchematics({
-                                    memorySeedsSelected: memorySeedsStillValid,
-                                });
-                            }
-                        } catch (error) {
-                            console.error(
-                                "Error during delayed memory seed cleanup:",
-                                error,
-                            );
-                        } finally {
-                            try {
-                                await unlink(lockFile);
-                                console.log("=====lock PM removed=====")
-                            } catch {
-                                // ignore
-                            } finally {
-                                setLockFileOriginatesFromThisPlugin(lockFile, null);
-                            }
-                        }
-                    }, delay);
+                    await memorySeedsCleanup(
+                        latestConversation,
+                        memorySeedsToRemove,
+                    );
                 }
-            } catch (error) {
-                clearInterval(pollForAssistantUpdate);
 
-                console.error(
-                    "Error polling for assistant update:",
-                    error,
+        const finalJson = JSON.stringify(
+            latestConversation,
+            null,
+            2,
+        );
+        await writeFile(
+            `${conversationFile}.pm-final-write.json`,
+            finalJson,
+            "utf-8",
+        );
+
+                await writeFile(
+                    conversationFile,
+                    JSON.stringify(
+                        latestConversation,
+                        null,
+                        2,
+                    ),
+                    "utf-8",
                 );
-            }
-        }, pollInterval);
+            },
+        );
+
+        // ---------------------------------------------
+        // These happen immediately.
+        // They do NOT wait for assistantLastMessagedAt.
+        // ---------------------------------------------
+
+        if (cleanupAllSeeds === true) {
+
+            updateMemorySeedsSelected([]);
+
+            setConfigSchematics({
+                memorySeedsSelected: [],
+            });
+
+        } else {
+
+            const memorySeedsStillValid =
+                validMemorySeedsSelected.filter(
+                    (memorySeed) =>
+                        !memorySeedsToRemove.includes(memorySeed),
+                );
+
+            updateMemorySeedsSelected(
+                memorySeedsStillValid,
+            );
+
+            setConfigSchematics({
+                memorySeedsSelected:
+                    memorySeedsStillValid,
+            });
+        }
 
         return validMemorySeedsSelected;
 
@@ -173,10 +139,9 @@ export async function removeMemorySeeds(
 }
 
 async function memorySeedsCleanup(
-    conversationFile: string,
     latestConversation: any,
     memorySeedsToRemove: string[],
-): Promise<string[]> {
+): Promise<void> {
 
     // User wants to remove memory seeds that were appended through the prompt preprocessor
     // Make sure the preprocessed text exists
@@ -227,17 +192,9 @@ async function memorySeedsCleanup(
             }
         }
     }
-    // Overwrite the conversation.json without the removed memory seeds.
-    await writeFile(
-        conversationFile,
-        JSON.stringify(latestConversation, null, 2),
-        "utf-8",
-    );
 
     // Seed removed success
-    console.log(`[removeMemorySeeds] Memory seeds [${memorySeedsToRemove.join(", ")}] successfully removed.`);
-
-    return memorySeedsToRemove;
+    // console.log(`[removeMemorySeeds] Memory seeds [${memorySeedsToRemove.join(", ")}] successfully removed.`);
 }
 
 function escapeRegExp(text: string): string {
@@ -247,7 +204,7 @@ function escapeRegExp(text: string): string {
     );
 }
 
-function removeAllMemoryWrappers(latestConversation: any): void {
+async function removeAllMemoryWrappers(latestConversation: any): Promise<void> {
     for (const message of latestConversation.messages ?? []) {
         for (const version of message.versions ?? []) {
             const preprocessedContent = version.preprocessed?.content;

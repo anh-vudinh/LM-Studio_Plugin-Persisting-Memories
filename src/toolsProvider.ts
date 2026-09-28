@@ -1,13 +1,21 @@
 import { tool, Tool, ToolsProviderController } from "@lmstudio/sdk";
-import { z } from "zod";
 import { getCurrentConversationHistory } from "./conversationHistoryCache";
 import { associateAssistantResponse } from "./memoryAssociation";
 import { memoryStore } from "./memoryStore";
-import { configSchematics, getSaveMemoryNumber } from "./config";
 import { getMemorySeedsPool } from "./memorySession";
 import { deleteMemorySeedFile } from "./deleteMemorySeedFiles"
+import { normalizeJsonFileName, maybeCreateACoordinationReadyFileAndAcquireLockFile } from "./promptPreprocessor";
 import { join } from "node:path";
-import { normalizeJsonFileName, acquireLock } from "./promptPreprocessor";
+import { readFile } from "fs/promises";
+import { z } from "zod";
+
+import {
+  configSchematics,
+  getSaveMemoryNumber,
+  resetSaveMemoryParameters,
+  getSaveMemoryCategory,
+  getSaveMemoryName
+} from "./config";
 
 /**
 * ToolsProvider does not have much responsibility. Just to interpret when the user
@@ -19,7 +27,6 @@ export async function toolsProvider(
   const tools: Tool[] = [];
   const config = ctl.getPluginConfig(configSchematics);
   const memoryFileToDelete = config.get("deleteMemorySeedsFile") as string;
-  let saveToolCallFinished = true;
 
   /**
   * Deletion logic is handled here because tools can get the real-time state
@@ -36,32 +43,6 @@ export async function toolsProvider(
     console.log("deleted ", normalizedMemoryFileToDelete)
   }
 
-  if (
-    getSaveMemoryNumber() !== null &&
-    config.get("conversationFileName") !== "" &&
-    saveToolCallFinished === true
-  ) {
-      // Prevents this function from spamming.
-      // Things here will keep invoking at regular intervals while the plugin is enabled.
-      // The reset happens when a tool call is finished.
-      saveToolCallFinished = false;
-
-      // Create lockfile so current history isn't overwritten while saving
-      const conversationDirectory = join(
-          await memoryStore.getRootDirectory(),
-          "conversations"
-      );
-      
-      const conversationFile = join(
-          conversationDirectory,
-          normalizeJsonFileName(config.get("conversationFileName") as string),
-      );
-      console.log("======conversationFile=======", conversationFile)
-      const lockFile = `${conversationFile}.lock`;
-
-      await acquireLock(lockFile);
-  }
-
   /**
    * ------------------------------------------------------------------------
    * persistingMemoriesTool
@@ -71,11 +52,16 @@ export async function toolsProvider(
     name: "persist_seed",
 
     description:
-      `Use when user says, "save memory"; category; name; ` +
-      `User must first have provided the category and name before this tool can be used. ` +
-      `If the tool returns "The msg number provided is invalid", stop calling this tool.`,
+      `No guess work allowed for this tool. The user must have exactly said save memory <number>; category <category>; name <name>; to have called for this tool.`,
 
     parameters: {
+      messageNumber: z
+        .number()
+        .int()
+        .min(1)
+        .describe(
+          "Exact number <N> provided by the user during a save memory command."
+        ),
       category: z
         .string()
         .trim()
@@ -83,7 +69,6 @@ export async function toolsProvider(
         .describe(
           "NON OPTIONAL: MUST BE USER PROVIDED. Memory Seed category/folder."
         ),
-
       name: z
         .string()
         .trim()
@@ -95,50 +80,53 @@ export async function toolsProvider(
 
     implementation: async (
       params: {
+        messageNumber: number;
         category: string;
         name: string;
       },
       { signal }
     ) => {
-
       // Create lockfile so current history isn't overwritten while saving
       const conversationDirectory = join(
           await memoryStore.getRootDirectory(),
           "conversations"
       );
-      
+
+      const conversationFileName = normalizeJsonFileName(config.get("conversationFileName") as string)
+
       const conversationFile = join(
           conversationDirectory,
-          normalizeJsonFileName(config.get("conversationFileName") as string),
+          conversationFileName,
       );
-      console.log("======conversationFile=======", conversationFile)
-      const lockFile = `${conversationFile}.lock`;
-
-      //await acquireLock(lockFile);
 
       try {
-
         const saveMemoryNumber = getSaveMemoryNumber();
+        const saveMemoryCategory = getSaveMemoryCategory();
+        const saveMemoryName = getSaveMemoryName();
 
-        if (saveMemoryNumber === null) {
-            throw new InvalidSaveMemoryNumberError();
-        }
-
-        if (!params.category) {
-          return (
-            "Tell me which category/folder name to use."
-          );
-        }
-
-        if (!params.name) {
-          return (
-            "Tell me what to name this Memory Seed."
-          );
+        // Not checking against params.messageNumber because
+        // I nip the model trying to hallucinate it's own number
+        // when we're clearly not during a save memory command.
+        if (saveMemoryNumber === null || saveMemoryCategory === null || saveMemoryName === null) {
+            throw new InvalidSaveMemoryRequestError(saveMemoryNumber, saveMemoryCategory, saveMemoryName);
         }
 
         if (signal.aborted) {
           return "Memory Seed operation was aborted.";
         }
+        const conversationJson = await readFile(conversationFile, "utf-8");
+
+        const conversation = JSON.parse(conversationJson);
+
+        //await acquireLock(lockFile, "toolsProvider");
+      
+        // If we coordinate we acquire a lock + create a ready file + have a 2000ms timeout before we release our lockfile. 
+        // If we do not coordinate we do not need a timeout of 2 seconds at all.
+        await maybeCreateACoordinationReadyFileAndAcquireLockFile(
+          conversation, 
+          conversationFile, 
+          "toolsProvider"
+        );
 
         const history = await getCurrentConversationHistory();
 
@@ -146,39 +134,56 @@ export async function toolsProvider(
           return "Memory Seed operation was aborted.";
         }
 
-        const validSaveMemoryNumber = saveMemoryNumber;
-
         // Start the memory saving
         const association = await associateAssistantResponse(
           ctl.client,
           history,
-          validSaveMemoryNumber,
+          params.messageNumber,
         );
 
-        await memoryStore.saveSeed(
-            params.category,
-            params.name,
-            {
-                date: new Date().toISOString(),
-                root_input: association.rootInput,
-                direct_input: association.directInput,
-                output: association.assistantResponse,
-            },
-            lockFile,
-        );
+        // Added some tolerance because users technically could delete all
+        // their user messages before asking the model to save a memory
+        const rootInput =
+            association.rootInput?.trim() ||
+            "original user intention/topic could not be found";
+
+        const directInput =
+            association.directInput?.trim() ||
+            association.rootInput?.trim() ||
+            "original user message could not be found";
+
+
+        const memorySavedStatus =
+          await memoryStore.saveSeed(
+              params.category,
+              params.name,
+              {
+                  date: new Date().toISOString(),
+                  root_input: rootInput,
+                  direct_input: directInput,
+                  output: association.assistantResponse,
+              },
+          );
 
         if (signal.aborted) {
           return "Memory Seed operation was aborted.";
         }
 
-        // Reset state for new tool calls
-        saveToolCallFinished = true;
+        // Reset states for new tool calls
+        resetSaveMemoryParameters();
 
-        return (
-          `Memory Seed" ${params.category}/${params.name}" of msg ${validSaveMemoryNumber} has been saved.`
-        );
+        if(memorySavedStatus){
+          return (
+            `Memory Seed ${params.category}/${params.name}" of msg ${params.messageNumber} has been saved.`
+          );
+        } else{
+          return (
+            `Memory Seed ${params.category}/${params.name}" of msg ${params.messageNumber} failed to save.`
+          );
+        }
+
       } catch (error) {
-        if (error instanceof InvalidSaveMemoryNumberError) {
+        if (error instanceof InvalidSaveMemoryRequestError) {
             throw error;
         }
 
@@ -199,9 +204,33 @@ export async function toolsProvider(
   return tools;
 }
 
-class InvalidSaveMemoryNumberError extends Error {
-    constructor() {
-        super("The msg number provided is invalid.");
+class InvalidSaveMemoryRequestError extends Error {
+    constructor(
+        saveMemoryNumber: number | null,
+        saveMemoryCategory: string | null,
+        saveMemoryName: string | null,
+    ) {
+        const reasons: string[] = [];
+
+        if (saveMemoryNumber === null) {
+            reasons.push("the user did not explicitly call the tool because an expected message number was not provided alongside their request. Do not call this tool again unless explicitly asked for");
+        }
+
+        if (saveMemoryCategory === null) {
+            reasons.push("the memory category was not provided. Must be provided with the prefix 'category', such as category <category_name>");
+        }
+
+        if (saveMemoryName === null) {
+            reasons.push("the memory name was not provided. Must be provided with the prefix 'name', such as name <seed_name>");
+        }
+
+        super(
+            "Invalid save memory request. " +
+            "The user must explicitly say 'save memory' with all required parameters. " +
+            `Problems: ${reasons.join("; ")}. ` +
+            `Or the user wishes to cancel their request, they may type 'exit save memory'.`
+        );
+
         this.name = "InvalidSaveMemoryNumberError";
     }
 }

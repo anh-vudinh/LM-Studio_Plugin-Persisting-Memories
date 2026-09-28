@@ -1,15 +1,15 @@
 # Persisting Memories Plugin
 
+Model dependent has the advantage of performing snappier, but it's trade off is that the model has more control over the process, so depending on behavior it's reliability may vary. I've taken extra steps in this latest release to take a compromising approach to addressing this unreliableness beyond trying to tune prompts. Read in my [Technical Details New Section.](#technical-details).
+
 - **This Plugin (model behavior dependent)** - [GithHub](https://github.com/anh-vudinh/LM-Studio_Plugin-Persisting-Memories) | [LMStudio](https://lmstudio.ai/anhuvdinh/persisting-memories)
 
-- **EXPLICIT version (RECOMMENDED)** - [GithHub - Explicit](https://github.com/anh-vudinh/-anh-vudinh-LM-Studio_Plugin-Persisting-Memories-Explicit) | [LMStudio](https://lmstudio.ai/anhuvdinh/persisting-memories-explicit)
+- **EXPLICIT version (I recommend this one for reliability)** - [GithHub - Explicit](https://github.com/anh-vudinh/-anh-vudinh-LM-Studio_Plugin-Persisting-Memories-Explicit) | [LMStudio](https://lmstudio.ai/anhuvdinh/persisting-memories-explicit)
 
-- ***Model dependent version (THIS VERSION) has not yet been made compatible with the latest version of the companion plugin. I will update this Readme when it has***
-
-- **Optional Companion Plugin (v1.0 works with this plugin's current version but is missing latest features/optimizations)** - [GithHub - Context Cleanup](https://github.com/anh-vudinh/LM-Studio_Context-Cleanup) | [LMStudio](https://lmstudio.ai/anhuvdinh/context-cleanup)
-
+- **Optional Companion Plugin** - [GithHub - Context Cleanup](https://github.com/anh-vudinh/LM-Studio_Context-Cleanup) | [LMStudio](https://lmstudio.ai/anhuvdinh/context-cleanup) - Useful at renumbering the message number appended at the end of assistant responses. Especially if the assistant loses track and refuses to correct itself.
 
 Persisting Memories Plugin is an LM Studio plugin that lets users preserve selected assistant responses as reusable memory seeds and inject those memories into future conversations. It stores memories as local JSON files, organizes them by category, and uses prompt preprocessing to add selected memories to the active prompt when needed.
+
 Tested working on Windows 11 Pro 25H2 - LM Studio 0.4.24
 
 ## Table of Contents
@@ -23,7 +23,6 @@ Tested working on Windows 11 Pro 25H2 - LM Studio 0.4.24
 - [Conversation Numbering](#conversation-numbering)
 - [Technical Details](#technical-details)
 - [Limitations or Notes](#limitations-or-notes)
-- [Why such a drastic change in the final release](#why-such-a-drastic-change-in-the-final-release)
 
 ## Overview
 
@@ -118,13 +117,39 @@ This numbering makes it easier for users to refer to a specific exchange when as
 
 ## Technical Details
 
+> NEW SECTION
+
+- Now compatible with the latest release of my Context Cleanup Plugin.
+
+- Instead of letting the model gather all the parameters and hope it registers it as the correct parameters, I've taken a new middle ground approach. When the backend sees that the user is trying to save a memory, it will wait to gather all the parameters. Once all the parameters (message #, category name, memory name) are known, the plugin will reconstruct the exact save memory command string to feed to the model. It will give all the gathered parameters in the correct format.
+
+- During an active save memory request if the user fails to provide any parameters there is a hard thrown error to the model. This will inform the model of the missing parameters or prevent the model from trying to invoke the tool when the user never asked for it. You may see a failed tool call, but nothing should be able to proceed beyond that point. My previous approach left a door open for the model to succesfully call the full tool function with parameters it hallucinated, this approach leaves no tolerance for that behavior.
+
+- Users are now barred from performing memory injections in the middle of a save memoroy request. This was done so that users would not muddle up the reconstructed memory command provided to the model. If you forget this rule it doesn't matter, the memories will just be injected on your first non-save memory turn.
+
+- Message # appending has been created into a "reminder" for the model. Rather than append tags on each user message to make sure the model always labels each message correctly, or only sending the formatting instructions once and hoping the model doesn't forget or start repeating numbers. I've taken an inbetween approach, I now have the formatting instructions sent one time if it hasn't already been given, and it will send the instructions again when the backend notices a pattern that the assistant has clearly disregarded the instructions. This has tested well. Less overhead than the repeated tags, yet able to recover if the model misbehaves or loses it's turn count. Still more inherent overhead compared to my explicit version though.
+
+- So far these new approaches seem better than before, less reliance on hoping the model gets it right, but there's always the inherient unreliableness of the model, which is eliminated by my explicit version.
+
+- Acquire Lock file has been reworked. The plugin now will not release it's lock until all the functions it needs to run are completed, similar to my approach on my explicit version. However I wanted to try a different method I chose not to implement on my explicit version. In short my explicit version gathers all the functions trying to run, and does it in one go with a single .lock file controlled by a coordinator. This model dependent version offloads some of that to the model so I went with the less complex version of making a queue. The faster function creates it's lock first and each function who needs to run it's logic will join the queue after and pass along it's functions to execute. Once the queue has been cleared then the lock file will be released.
+
+- If you start discussing things within the assistant's no-go-zones and don't relent, your model may get tied up into an intolerant-reject-your-demands/requests pattern, there is a high chance it will start disregarding even simple demands like the formatting instructions even if it's sent every user turn. What I have seen that was mostly successful is if the assistant has been refusing to append the message number. You directly tell it to start following the formatting instructions again. It will resume once it's out of it's rejection mood.
+
+> OLD SECTION
 - A memories folder will be created at `C:\Users\USERNAME\.lmstudio`, and a `.json` file that retains the relationship between the chat session and its conversation file will be stored in `C:\Users\USERNAME\.lmstudio\conversations`.
+
 - Injection markers: memories will be injected within blocks of BEGIN and END markers containing the memory seed category/memory_name. These markers allow for later removal of the memory.
+
 - Internal chat ID: the preprocessor will append a one-time InternalChatID [ICID] to mark the chat session. This marker helps to later identify the session and tie it to the corresponding conversation file. Some dumb overcautious models will think the tag is a jailbreak attempt to manipulate their behavior.
+
 - Conversation mapping: the plugin stores a relationship file that maps internal chat IDs to conversation file names. It keeps only the newest 15 relationships.
+
 - Removal polling: when triggered memory removal, polls the conversation file every `800 ms` until the assistant finishes responding. Then it will remove the memories from the conversation after 2 seconds. These 2 seconds were mandatory otherwise LM Studio would just overwrite it again with some cached version prior to the removal of the memory seeds.
+
 - LM Studio also reinitializes the plugins whenever it decides too, so reliable long term storage of variables outside the scope is unreliable and just used temporarily. That includes storing current values in the config Schematics.
+
 - Path safety: memory names are normalized, but not to correct misspellings. It is easiest to copy and paste the memory name from the list displayed in Available Memories into the text field of Memories to Inject.
+
 - In-memory pool: the available memory pool is kept in memory and updated when files are deleted. Plugin UI updates may be delayed because of LM Studio plugin behavior, but on the backend these values are properly updated.
 
 ## Limitations or Notes
@@ -134,6 +159,12 @@ This numbering makes it easier for users to refer to a specific exchange when as
 - The plugin assumes LM Studio Windows 11 conversation files are accessible under the configured root directory at `C:\Users\USERNAME\.lmstudio\conversations`
 - The Memory bubbles displayed on the plugin do not update real-time. Again another limitation of LM Studio not giving a way to send updated data upstream back to the plugin UI. The memory bubbles will update when the tool reinitializes, so when it's left idle for awhile then interacted with, or if you click the trashcan "reset" button. There are already validation checks in the backend to prevent any bugs, so don't worry about it. If you choose memories that aren't available, nothing will happen. If you add, remove, or delete memories that aren't active or exist, nothing will break. It'll just be a visual bug of the UI that will refresh upon it's next initialization.
 
+
+<details>
+<summary>Click to expand Legacy Content</summary>
+
 ## Why such a drastic change in the final release
 
 - Unfortunately when I thought the plugin was ready for release I noticed some glaring bugs. The biggest cause of this was LM Studio's random behavior to reinitialize the plugin whenever it wanted to and the memory seeds not reliably being cleansed. It was like LM Studio was fighting to constantly overwrite with a cached version. When the timing was perfect the changes finalized which was what I saw in my limited testing when the code functionality was small. When it wasn't perfect, which was most the time as the code grew, LM Studio kept overwriting the cleansed copy with a version it had in cache and reviving the memory seeds, which then would be a constant war between LM Studio and my code to remove/replant/remove/replant. After a break I decided I didn't want to continue with some patch job or keep tweaking knobs until it worked, and proceeded to redo the flow of the prompt preprocessor, the artifacts used to wrap the memories, remove reliance on data states(plugin reinitialization caused loss of states), added a better way to associate the conversation file to the chat, be less reliant on history and favor the conversation file, and pin point the exact window to try and beat LM Studio's default behavior. With a fresh mind, I eventually found it, and it's a 2 seconds window after the assistant has finished it's response. I integrated those new findings and requirements into the final version. The flow has drastically improved and the bugs I was able to find have been stomped out.
+
+</details>

@@ -1,13 +1,10 @@
 import { getMemorySeedsPool } from "./memorySession";
-import { unlink } from "node:fs/promises";
 import fs from "node:fs/promises";
 import path from "node:path";
 
 import {
     setConfigSchematics,
-    setSaveMemoryNumber,
     getSaveMemoryNumber,
-    setLockFileOriginatesFromThisPlugin
 } from "./config";
 
 export interface MemorySeed {
@@ -128,7 +125,9 @@ export class MemoryStore {
 
     /**
      * Save a Memory Seed.
-     *
+     * True = successful write/save
+     * False = failed
+     * 
      * Creates:
      *
      *   memories/
@@ -139,112 +138,101 @@ export class MemoryStore {
         category: string,
         name: string,
         seed: MemorySeed,
-        lockFile: string,
-    ): Promise<void> {
+    ): Promise<boolean> {
         const directory = await this.initializeAndGetDirectory();
 
         const safeCategory = sanitizePathPart(category);
         const safeName = sanitizeFilename(name);
         const saveMemoryNumber = getSaveMemoryNumber();
 
-        if(saveMemoryNumber === null) {
-            throw new Error("Memory save message number is invalid.");
+        if (saveMemoryNumber === null) {
+            return false;
         }
 
         if (!safeCategory) {
-            throw new Error("Memory category cannot be empty.");
+            return false;
         }
 
         if (!safeName) {
-            throw new Error("Memory Seed name cannot be empty.");
+            return false;
         }
 
         if (!seed.root_input.trim()) {
-            throw new Error("Memory Seed root input cannot be empty.");
+            return false;
         }
 
         if (!seed.direct_input.trim()) {
-            throw new Error("Memory Seed direct input cannot be empty.");
+            return false;
         }
 
         if (!seed.output.trim()) {
-            throw new Error("Memory Seed output cannot be empty.");
+            return false;
         }
 
-        const categoryPath = path.join(
-            directory,
-            safeCategory,
-        );
-
-        await fs.mkdir(categoryPath, {
-            recursive: true,
-        });
-
-        const filePath = path.join(
-            categoryPath,
-            `${safeName}.json`,
-        );
-
-        let seeds: MemorySeed[] = [];
-
         try {
-            const existing = await fs.readFile(
+            const categoryPath = path.join(
+                directory,
+                safeCategory,
+            );
+
+            await fs.mkdir(categoryPath, {
+                recursive: true,
+            });
+
+            const filePath = path.join(
+                categoryPath,
+                `${safeName}.json`,
+            );
+
+            let seeds: MemorySeed[] = [];
+
+            try {
+                const existing = await fs.readFile(
+                    filePath,
+                    "utf-8",
+                );
+
+                const parsed = JSON.parse(existing);
+
+                if (Array.isArray(parsed)) {
+                    seeds = parsed;
+                } else if (parsed && typeof parsed === "object") {
+                    seeds = [parsed as MemorySeed];
+                } else {
+                    return false;
+                }
+            } catch (error: any) {
+                if (error.code !== "ENOENT") {
+                    return false;
+                }
+            }
+
+            seeds.push(seed);
+
+            await fs.writeFile(
                 filePath,
+                JSON.stringify(seeds, null, 2),
                 "utf-8",
             );
 
-            const parsed = JSON.parse(existing);
+            const memorySeedName =
+                `${safeCategory}/${safeName}.json`;
 
-            if (Array.isArray(parsed)) {
-                seeds = parsed;
-            } else if (parsed && typeof parsed === "object") {
-                // Support the previous single-seed file format.
-                seeds = [parsed as MemorySeed];
-            } else {
-                throw new Error(
-                    `Memory Seed file "${filePath}" contains invalid JSON data.`,
-                );
+            const memorySeedsPool =
+                getMemorySeedsPool();
+
+            if (!memorySeedsPool.includes(memorySeedName)) {
+                setConfigSchematics({
+                    memorySeedsPool: [
+                        ...memorySeedsPool,
+                        memorySeedName,
+                    ],
+                });
             }
-        } catch (error: any) {
-            if (error.code !== "ENOENT") {
-                throw error;
-            }
-        }
 
-        seeds.push(seed);
-
-        await fs.writeFile(
-            filePath,
-            JSON.stringify(seeds, null, 2),
-            "utf-8",
-        );
-
-        const memorySeedName =
-            `${safeCategory}/${safeName}.json`;
-
-        const memorySeedsPool =
-            getMemorySeedsPool();
-
-        if (!memorySeedsPool.includes(memorySeedName)) {
-            setConfigSchematics({
-                memorySeedsPool: [
-                    ...memorySeedsPool,
-                    memorySeedName,
-                ],
-            });
-        }
-
-        // resets the saveMemoryNumber to it's default
-        setSaveMemoryNumber(null);
-
-        // remove lockfile
-        try {
-            await unlink(lockFile);
-            console.log("=====lock PM removed=====")
+            return true;
         } catch {
-            // ignore
-        } finally {
-            setLockFileOriginatesFromThisPlugin(lockFile, null);
+            return false;
         }
     }
 

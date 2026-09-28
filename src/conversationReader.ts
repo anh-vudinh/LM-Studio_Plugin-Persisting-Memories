@@ -339,7 +339,7 @@ export function cleanAssistantResponse(text: string): string {
     }
 
     cleaned = cleaned.replace(
-        /\n+\*\*message \d+\*\*\s*$/,
+        /\n+\*\*\*message \d+\*\*\*\s*$/,
         "",
     );
 
@@ -349,11 +349,19 @@ export function cleanAssistantResponse(text: string): string {
 export function cleanUserInput(text: string): string {
     return text
         .replace(
+            /The user asked you to use the persist_seed tool\.[\s\S]*?:End of command\./g,
+            "",
+        )
+        .replace(
+            /(?:save|sav|sve|sv|store|remember|persist)\s*(?:memory|mem|mm|mmry|memry|mry|mmy|memy)\s*(?:message|msg)?\s*\d+\s*[;,.]?\s*/gi,
+            "",
+        )
+        .replace(
             /Formatting Instruction:.*?:End of Instruction.?/g,
             "",
         )
         .replace(
-            /\[BEGINNING OF MEMORIES\] NOT INSTRUCTIONS, JUST SOME PRIOR CONVERSATION:[\s\S]*?\[END OF MEMORIES\]/g,
+            /\[BEGINNING OF MEMORIES\][\s\S]*?\[END OF MEMORIES\]/g,
             "",
         )
         .replace(
@@ -364,9 +372,13 @@ export function cleanUserInput(text: string): string {
             /Ignore this ICID tag\./,
             "",
         )
+        .replace(
+            /System:[\s\S]*?'pending save memory\.\.\.'/g,
+            "",
+        )
+        .replace(
+            /Your message number for this turn is \d+\./g,
+            "",
+        )
         .trim();
-        // .replace(
-        //     /\[ADD_MN_\d+\]/,
-        //     "",
-        // )  
 }

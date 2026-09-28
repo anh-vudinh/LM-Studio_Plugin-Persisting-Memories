@@ -61,7 +61,6 @@ export async function deleteMemorySeedFile(
 
     } catch (error: any) {
         if (error.code === "ENOENT") {
-            console.log(`Error: Memory seed "${normalizedMemorySeed}" was not found.`);
             return `Error: Memory seed "${normalizedMemorySeed}" was not found.`;
         }
     }
