@@ -82,5 +82,5 @@ export async function main(context: PluginContext) {
     context.withToolsProvider(toolsProvider);
     context.withPromptPreprocessor(promptPreprocessor);
 
-    console.log("Memory Seed Plugin initialized");
+    console.log("Persisting Memories(model dependent) Plugin initialized");
 }

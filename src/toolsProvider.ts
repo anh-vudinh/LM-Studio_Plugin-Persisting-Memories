@@ -1,10 +1,12 @@
+import type { MemorySeed } from "./memoryStore";
 import { tool, Tool, ToolsProviderController } from "@lmstudio/sdk";
 import { getCurrentConversationHistory } from "./conversationHistoryCache";
 import { associateAssistantResponse } from "./memoryAssociation";
 import { memoryStore } from "./memoryStore";
 import { getMemorySeedsPool } from "./memorySession";
 import { deleteMemorySeedFile } from "./deleteMemorySeedFiles"
-import { normalizeJsonFileName, maybeCreateACoordinationReadyFileAndAcquireLockFile } from "./promptPreprocessor";
+import { maybeCreateACoordinationReadyFileAndAcquireLockFile } from "./promptPreprocessor";
+import { cleanUserInput } from "./conversationReader";
 import { join } from "node:path";
 import { readFile } from "fs/promises";
 import { z } from "zod";
@@ -14,7 +16,12 @@ import {
   getSaveMemoryNumber,
   resetSaveMemoryParameters,
   getSaveMemoryCategory,
-  getSaveMemoryName
+  getSaveMemoryName,
+  getSaveMemoryNumberEndRange,
+  getConversationFileName,
+  getNameExtractRegex,
+  getCategoryExtractRegex,
+  getExitSaveMemoryRegex
 } from "./config";
 
 /**
@@ -35,12 +42,43 @@ export async function toolsProvider(
   */
   const normalizedMemoryFileToDelete = memoryFileToDelete.trim()
 
-  if (normalizedMemoryFileToDelete !== "" && 
+  const wildcardMatch =
+    normalizedMemoryFileToDelete.match(
+        /^([^/]+)\/\*\.json$/i,
+    );
+
+  if (
+    wildcardMatch &&
+    normalizedMemoryFileToDelete !== ""
+  ) {
+      // Handle wildcard deletion
+      const category = wildcardMatch[1];
+
+      const memorySeedsToDelete =
+          getMemorySeedsPool().filter(
+              (memorySeed) =>
+                  memorySeed.startsWith(
+                      `${category}/`,
+                  ),
+          );
+        
+      // Category does not exist in the memory pool → do nothing
+      if (memorySeedsToDelete.length !== 0) {
+        for (const memorySeed of memorySeedsToDelete) {
+            await deleteMemorySeedFile(memorySeed);
+            
+            console.log("deleted ", memorySeed);
+        }
+      }
+
+  } else if (
+      // Normal file deletion
+      normalizedMemoryFileToDelete !== "" &&
       getMemorySeedsPool().includes(normalizedMemoryFileToDelete)
   ) {
+      await deleteMemorySeedFile(normalizedMemoryFileToDelete);
 
-    await deleteMemorySeedFile(normalizedMemoryFileToDelete);
-    console.log("deleted ", normalizedMemoryFileToDelete)
+      console.log("deleted ", normalizedMemoryFileToDelete);
   }
 
   /**
@@ -52,29 +90,38 @@ export async function toolsProvider(
     name: "persist_seed",
 
     description:
-      `No guess work allowed for this tool. The user must have exactly said save memory <number>; category <category>; name <name>; to have called for this tool.`,
-
+      `The user must have exactly said, 'save memory <message Number>; category <category>; name <name>;' to have called for this tool to save an individual message. ` +
+      `If the user said "through or to" and any of it's variations and the user provided a <message End Number> it dictates that the user wants to save a range of messages, use the optional messageEndNumber parameter.`,
+      
     parameters: {
       messageNumber: z
         .number()
         .int()
         .min(1)
         .describe(
-          "Exact number <N> provided by the user during a save memory command."
+          "Exact <message Number> provided by the user during a save memory command."
         ),
       category: z
         .string()
         .trim()
         .min(1)
         .describe(
-          "NON OPTIONAL: MUST BE USER PROVIDED. Memory Seed category/folder."
+          "Exact <category> provided by the user during a save memory command."
         ),
       name: z
         .string()
         .trim()
         .min(1)
         .describe(
-          "NON OPTIONAL: MUST BE USER PROVIDED. Name for the Memory Seed."
+          "Exact <name> provided by the user during a save memory command."
+        ),
+      messageEndNumber: z
+        .number()
+        .int()
+        .min(1)
+        .optional()
+        .describe(
+          "Exact <message End Number> IF provided by the user during a save memory command. User may provide this to save a range of messages."
         ),
     },
 
@@ -83,6 +130,7 @@ export async function toolsProvider(
         messageNumber: number;
         category: string;
         name: string;
+        messageEndNumber?: number;
       },
       { signal }
     ) => {
@@ -92,7 +140,7 @@ export async function toolsProvider(
           "conversations"
       );
 
-      const conversationFileName = normalizeJsonFileName(config.get("conversationFileName") as string)
+      const conversationFileName = getConversationFileName();
 
       const conversationFile = join(
           conversationDirectory,
@@ -101,6 +149,7 @@ export async function toolsProvider(
 
       try {
         const saveMemoryNumber = getSaveMemoryNumber();
+        const saveMemoryEndNumber = getSaveMemoryNumberEndRange();
         const saveMemoryCategory = getSaveMemoryCategory();
         const saveMemoryName = getSaveMemoryName();
 
@@ -134,36 +183,113 @@ export async function toolsProvider(
           return "Memory Seed operation was aborted.";
         }
 
-        // Start the memory saving
-        const association = await associateAssistantResponse(
-          ctl.client,
-          history,
-          params.messageNumber,
-        );
+        let memorySavedStatus = false;
 
-        // Added some tolerance because users technically could delete all
-        // their user messages before asking the model to save a memory
-        const rootInput =
-            association.rootInput?.trim() ||
-            "original user intention/topic could not be found";
+        // SINGLE MESSAGE SAVE
+        if (saveMemoryEndNumber === null) {
 
-        const directInput =
-            association.directInput?.trim() ||
-            association.rootInput?.trim() ||
-            "original user message could not be found";
+          // Start the memory saving
+          const association = await associateAssistantResponse(
+            ctl.client,
+            history,
+            params.messageNumber,
+          );
 
+          // Added some tolerance because users technically could delete all
+          // their user messages before asking the model to save a memory
+          const cleanedRootInput = cleanUserInput(association.rootInput?.trim());
 
-        const memorySavedStatus =
-          await memoryStore.saveSeed(
-              params.category,
-              params.name,
-              {
+          const rootInput = cleanedRootInput !== ""
+            ? cleanedRootInput 
+            : "original user intention/topic was fully scrubbed";
+
+          const cleanedDirectInput = cleanUserInput(association.directInput?.trim());
+
+          const directInput = cleanedDirectInput !== ""
+            ? cleanedDirectInput
+            : "original user message was fully scrubbed";
+          
+          // The reason I did not fully scrub the inputs unlike what I do for multi-message saves
+          // is because the user is acting as the person who is demanding this specific assistant message be saved.
+          // So if that is linked to a save memory command, so be it. We just scrubbed the save memory # portion so
+          // that there is no exceptional case where the tool hallucinates a tool call.
+          memorySavedStatus =
+            await memoryStore.saveSeed(
+                params.category,
+                params.name,
+                {
                   date: new Date().toISOString(),
                   root_input: rootInput,
                   direct_input: directInput,
                   output: association.assistantResponse,
-              },
+                },
+            );
+
+        } else {
+
+          // MULTI MESSAGE SAVE
+          const seeds: MemorySeed[] = [];
+
+          for (
+              let memoryNumber = saveMemoryNumber;
+              memoryNumber <= saveMemoryEndNumber;
+              memoryNumber++
+          ) {
+              const association = await associateAssistantResponse(
+                  ctl.client,
+                  history,
+                  memoryNumber,
+              );
+
+              const cleanedRootInput = cleanUserInput(association.rootInput?.trim());
+
+              const cleanedDirectInput = cleanUserInput(association.directInput?.trim());
+
+              if (
+                  isMetadataOnlyInput(cleanedDirectInput)
+              ) {
+                  continue;
+              }
+
+              // Only save seeds that have both root and direct inputs
+              if (
+                cleanedRootInput !== "" && 
+                cleanedDirectInput !== ""
+              ) {
+                seeds.push({
+                  date: new Date().toISOString(),
+                  root_input: cleanedRootInput,
+                  direct_input: cleanedDirectInput,
+                  output: association.assistantResponse,
+                });
+              }
+
+              // Root Input fully scrubbed but direct input is still usable
+              // Just use DirectInput to be a placeholder for RootInput
+              if (
+                cleanedRootInput === "" &&
+                cleanedDirectInput !== ""
+              ) {
+                seeds.push({
+                  date: new Date().toISOString(),
+                  root_input: cleanedDirectInput,
+                  direct_input: cleanedDirectInput,
+                  output: association.assistantResponse,
+                });
+              }
+
+              // UserInput unusable, skip the save
+          }
+
+          // All seeds go into the same file in one read/write operation.
+          // startMemoryNumber satisfies the existing save-memory-number check.
+          memorySavedStatus = await memoryStore.saveMultipleSeeds(
+              saveMemoryCategory,
+              saveMemoryName,
+              seeds,
+              saveMemoryNumber,
           );
+        }
 
         if (signal.aborted) {
           return "Memory Seed operation was aborted.";
@@ -174,11 +300,11 @@ export async function toolsProvider(
 
         if(memorySavedStatus){
           return (
-            `Memory Seed ${params.category}/${params.name}" of msg ${params.messageNumber} has been saved.`
+            `Memory Seed ${params.category}/${params.name} of msg ${params.messageNumber}${saveMemoryEndNumber !== null? ` through ${params.messageEndNumber}` : ""} has been saved.`
           );
         } else{
           return (
-            `Memory Seed ${params.category}/${params.name}" of msg ${params.messageNumber} failed to save.`
+            `Memory Seed ${params.category}/${params.name} of msg ${params.messageNumber}${saveMemoryEndNumber !== null? ` through ${params.messageEndNumber}` : ""} failed to save.`
           );
         }
 
@@ -213,24 +339,55 @@ class InvalidSaveMemoryRequestError extends Error {
         const reasons: string[] = [];
 
         if (saveMemoryNumber === null) {
-            reasons.push("the user did not explicitly call the tool because an expected message number was not provided alongside their request. Do not call this tool again unless explicitly asked for");
+            reasons.push(`the user did not explicitly call the tool because an expected message number was not provided alongside their request. Do not call this tool again unless explicitly asked for.`);
         }
 
         if (saveMemoryCategory === null) {
-            reasons.push("the memory category was not provided. Must be provided with the prefix 'category', such as category <category_name>");
+            reasons.push(`the memory category was not explicitly specified by the user. Must be provided with the prefix 'category', such as category <category_name>.`);
         }
 
         if (saveMemoryName === null) {
-            reasons.push("the memory name was not provided. Must be provided with the prefix 'name', such as name <seed_name>");
+            reasons.push(`the memory name was not explicitly specified by the user. Must be provided with the prefix 'name', such as name <seed_name>.`);
         }
 
         super(
-            "Invalid save memory request. " +
-            "The user must explicitly say 'save memory' with all required parameters. " +
-            `Problems: ${reasons.join("; ")}. ` +
-            `Or the user wishes to cancel their request, they may type 'exit save memory'.`
+            `Invalid save memory request.\n\n` +
+            "The user must explicitly say 'save memory' with all required parameters.\n\n" +
+            `Problems Listed:\n\n${reasons.join("\n\n")}.\n\n` +
+            `Or if the user wishes to cancel their request, they may say 'exit save memory'.`
         );
 
         this.name = "InvalidSaveMemoryNumberError";
     }
+}
+
+function isMetadataOnlyInput(input: string): boolean {
+
+    // Regexes unified at config.ts
+    const CATEGORY_EXTRACT_REGEX = getCategoryExtractRegex();
+
+    const NAME_EXTRACT_REGEX = getNameExtractRegex();
+
+    const EXIT_SAVE_MEMORY_REGEX = getExitSaveMemoryRegex();
+
+    const normalized = input.trim();
+
+    if (EXIT_SAVE_MEMORY_REGEX.test(normalized)) {
+        return true;
+    }
+
+    const segments = normalized
+        .split(/[;,\.]/)
+        .map((segment) => segment.trim())
+        .filter(Boolean);
+
+    if (segments.length === 0) {
+        return false;
+    }
+
+    return segments.every(
+        (segment) =>
+            CATEGORY_EXTRACT_REGEX.test(segment) ||
+            NAME_EXTRACT_REGEX.test(segment),
+    );
 }

@@ -174,9 +174,6 @@ async function memorySeedsCleanup(
             }
         }
     }
-
-    // Seed removed success
-    // console.log(`[removeMemorySeeds] Memory seeds [${memorySeedsToRemove.join(", ")}] successfully removed.`);
 }
 
 function escapeRegExp(text: string): string {

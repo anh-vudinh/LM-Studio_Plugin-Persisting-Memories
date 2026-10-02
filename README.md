@@ -1,4 +1,4 @@
-# Persisting Memories Plugin
+# Persisting Memories Plugin for LM Studio
 
 Model dependent has the advantage of performing snappier, but it's trade off is that the model has more control over the process, so depending on behavior it's reliability may vary. I've taken extra steps in this latest release to take a compromising approach to addressing this unreliableness beyond trying to tune prompts. Read in my [Technical Details New Section.](#technical-details).
 
@@ -11,6 +11,60 @@ Model dependent has the advantage of performing snappier, but it's trade off is 
 Persisting Memories Plugin is an LM Studio plugin that lets users preserve selected assistant responses as reusable memory seeds and inject those memories into future conversations. It stores memories as local JSON files, organizes them by category, and uses prompt preprocessing to add selected memories to the active prompt when needed.
 
 Tested working on Windows 11 Pro 25H2 - LM Studio 0.4.24
+
+## New/Updated (10/2/2026)
+
+1) Added batch memory save, `save memory <message #> to <message #>; category <category>; name <name>`.
+    User messages that are just save memory commands will be filtered out and not saved to the file during the batch process.
+    <details>
+    <summary>Click to expand image of batch memories save</summary>
+    <img src="chat-save-batch-memories.jpg" alt="Image of batch save memories">
+    </details>
+<br>
+
+2) Added wild card behavior to injecting memory seeds. `<category_folder>/*.json` will inject all memory files within that category folder.
+    Users will not be allowed to create a fle named `*` or `*.json` to protect this feature. (memory/file names like `few*many` will be allowed)
+    <details>
+    <summary>Click to expand image of batch memories inject</summary>
+    <img src="chat-batch-memories-inject.jpg" alt="Image of batch memories inject">
+    </details>
+<br>
+
+3) Added wild card behavior to deleting memories. `<category_folder>/*.json` will delete that entire category folder. Be warned, the moment you complete that name to delete up to the last `n` of `.json` and it is a valid existing folder, it's gone, there is no recovery.
+   <details>
+   <summary>Click to expand Picture of category wild card delete.</summary>
+   <img src="category-wildcard-delete.jpg" alt="Image of wildcard delete">
+   </details>
+<br>
+
+4) Standarized save memory regex between the this plugin and my other explicit and context cleanup plugins.
+
+5) Imported the more advanced acquirelock and my improved ICID and CFN scan logics.
+
+6) Loosened some constraints on a failing save memory condition where user's message was a save command or meta data that was fully scrubbed. Fixed the placement of the input scrubbing, I was cleaning the input too early in the chain. Loosening it so it would not be corrected at the first step but at the last step.
+
+7) Moved some variables to module-level states living in config.ts
+
+8) The following isn't new but I never specifically went over them and think users should know the leeway and options they have for the spelling of the save command.
+   
+   *(Example: ***svmem4*** will be accepted and so will with ***store mmry msg4***. the category is apple). Batch memory save requires a variation of through/to as a trigger and ending message number*
+
+   <details>
+   <summary>Click to expand Picture of Save Memory command verbage</summary>
+   <img src="save-memory-command-variations.jpg" alt="Image of save command variations">
+   </details>
+<br>
+
+9) Updated verbage of throwing a hard error when model tries to execute the tool with hallucinated parameters.
+   <details>
+   <summary>Click to expand Picture of hard stopping hallucinated parameters</summary>
+   <img src="hard-error-to-stop-hallucinating-parameters.jpg" alt="Image of save hard error thrown">
+   </details>
+<br>
+
+## Final Thoughts
+
+I belive I've made this plugin's features rich enough to cover any angle a user might want to utilize or try and break this plugin through typical use. I'm also out of ideas of any avenues of expansion. Really the only two big flaws are on LM Studio's part, 1) No pathway to update the plugin-UI in real-time, and 2) The 2 second window after the assistant's lastest response must be respected or any updates will be overwritten by a cached version. Those are beyond my control. Unless LM Studio fixes those quirks this is probably the final version I'm sticking with unless I spot bugs during my personal use.
 
 ## Table of Contents
 

@@ -3,7 +3,6 @@ import type { Chat } from "@lmstudio/sdk";
 
 import {
     cleanAssistantResponse,
-    cleanUserInput,
     getAssistantResponse,
     getPriorUserMessages,
     type UserIntentionCandidate,
@@ -46,36 +45,41 @@ export async function associateAssistantResponse(
         assistantMessageNumber,
     );
 
-    if (candidates.length === 0) {
-        throw new Error(
-            `Message ${assistantMessageNumber} has no earlier user messages ` +
-            "that could serve as its root intention.",
+    // Intentionally disabled for more leeway
+    // This is the only user-message-related failure condition.
+    // if (candidates.length === 0) {
+    //     throw new Error(
+    //         `Message ${assistantMessageNumber} has no earlier user messages ` +
+    //         "that could serve as its root intention.",
+    //     );
+    // }
+
+    let rootInput = "";
+
+    try {
+        const rootUserMessageNumber =
+            await determineOriginalIntention(
+                client,
+                cleanedAssistantResponse,
+                candidates,
+            );
+
+        const rootCandidate = candidates.find(
+            (candidate) =>
+                candidate.messageNumber === rootUserMessageNumber,
         );
+
+        if (rootCandidate) {
+            rootInput = rootCandidate.content;
+        }
+    } catch {
+        // Let downstream logic handle an undetermined root input.
+        rootInput = "";
     }
-
-    const rootUserMessageNumber =
-        await determineOriginalIntention(
-            client,
-            cleanedAssistantResponse,
-            candidates,
-        );
-
-    const rootCandidate = candidates.find(
-        (candidate) =>
-            candidate.messageNumber === rootUserMessageNumber,
-    );
-
-    if (!rootCandidate) {
-        throw new Error(
-            `The association model selected message ` +
-            `${rootUserMessageNumber}, but that message is not a valid ` +
-            "prior user message.",
-        );
-    }
-
-    const messages = history.getMessagesArray();
 
     let directInput = "";
+
+    const messages = history.getMessagesArray();
 
     for (
         let index = assistantMsg.arrayIndex - 1;
@@ -88,28 +92,14 @@ export async function associateAssistantResponse(
             continue;
         }
 
-        directInput = cleanUserInput(
-            message.getText(),
-        );
-
+        directInput = message.getText() || "";
         break;
-    }
-
-    if (!directInput) {
-        throw new Error(
-            `Message ${assistantMessageNumber} has no directly preceding ` +
-            "user input.",
-        );
     }
 
     return {
         assistantMessageNumber,
         assistantResponse: cleanedAssistantResponse,
-
-        rootInput: cleanUserInput(
-            rootCandidate.content,
-        ),
-
+        rootInput,
         directInput,
     };
 }
@@ -128,7 +118,7 @@ async function determineOriginalIntention(
         .map(
             (candidate) =>
                 `USER MESSAGE ${candidate.messageNumber}:\n` +
-                cleanUserInput(candidate.content),
+                candidate.content,
         )
         .join("\n\n---\n\n");
 

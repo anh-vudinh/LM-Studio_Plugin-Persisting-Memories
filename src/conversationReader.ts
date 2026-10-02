@@ -1,4 +1,5 @@
 import type { Chat, ChatMessage } from "@lmstudio/sdk";
+import { getCleanUserInputSaveMemoryRegex } from "./config";
 
 export interface ConversationMessage {
     /**
@@ -147,7 +148,7 @@ export function getAssistantResponse(
         return {
             messageNumber,
             arrayIndex,
-            content: cleanAssistantResponse(message.getText()),
+            content: message.getText(),
             raw: message,
         };
     }
@@ -353,7 +354,7 @@ export function cleanUserInput(text: string): string {
             "",
         )
         .replace(
-            /(?:save|sav|sve|sv|store|remember|persist)\s*(?:memory|mem|mm|mmry|memry|mry|mmy|memy)\s*(?:message|msg)?\s*\d+\s*[;,.]?\s*/gi,
+            getCleanUserInputSaveMemoryRegex(),
             "",
         )
         .replace(
@@ -378,6 +379,10 @@ export function cleanUserInput(text: string): string {
         )
         .replace(
             /Your message number for this turn is \d+\./g,
+            "",
+        )
+        .replace(
+            /User no longer wishes to save a memory, all parameters currently gathered should be released\./g,
             "",
         )
         .trim();
