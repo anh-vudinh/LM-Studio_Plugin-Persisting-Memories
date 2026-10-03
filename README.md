@@ -12,6 +12,10 @@ Persisting Memories Plugin is an LM Studio plugin that lets users preserve selec
 
 Tested working on Windows 11 Pro 25H2 - LM Studio 0.4.24
 
+## Bug fix (10/3/2026)
+
+1) I thought I had accounted for the conversation file sitting within a nested folder, turns out I didn't. It's now been added so you can organize your conversations into sub folders and the plugin should be able to pin point it now.
+
 ## New/Updated (10/2/2026)
 
 1) Added batch memory save, `save memory <message #> to <message #>; category <category>; name <name>`.
@@ -64,7 +68,7 @@ Tested working on Windows 11 Pro 25H2 - LM Studio 0.4.24
 
 ## Final Thoughts
 
-I belive I've made this plugin's features rich enough to cover any angle a user might want to utilize or try and break this plugin through typical use. I'm also out of ideas of any avenues of expansion. Really the only two big flaws are on LM Studio's part, 1) No pathway to update the plugin-UI in real-time, and 2) The 2 second window after the assistant's lastest response must be respected or any updates will be overwritten by a cached version. Those are beyond my control. Unless LM Studio fixes those quirks this is probably the final version I'm sticking with unless I spot bugs during my personal use.
+I believe I've made this plugin's features rich enough to cover any angle a user might want to utilize or try and break this plugin through typical use. I'm also out of ideas of any avenues of expansion. Really the only two big flaws are on LM Studio's part, 1) No pathway to update the plugin-UI in real-time, and 2) The 2 second window after the assistant's lastest response must be respected or any updates will be overwritten by a cached version. Those are beyond my control. Unless LM Studio fixes those quirks this is probably the final version I'm sticking with unless I spot bugs during my personal use.
 
 ## Table of Contents
 

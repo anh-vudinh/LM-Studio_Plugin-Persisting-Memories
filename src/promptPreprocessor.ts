@@ -5,7 +5,7 @@ import { acquireLock, releaseLock } from "./acquireLockFile";
 import { memoryStore } from "./memoryStore";
 import { removeMemorySeeds } from "./removeMemorySeeds";
 import { saveMemoryTextCheckerExtractorConstructor } from "./saveMemoryTextCheckerExtractorConstructor";
-import { join, basename } from "node:path";
+import { join, basename, relative } from "node:path";
 import path from "node:path";
 import os from "os";
 
@@ -633,7 +633,14 @@ async function recoverICIDMultiStepMaybeSetConversationFileName(
             ) {
                 // If we already expendend the processing power to confirm the conversation file name
                 // we might as well set it.
-                setConversationFileName(normalizeJsonFileName(basename(conversationFile)));
+                setConversationFileName(
+                    normalizeJsonFileName(
+                        getConversationRelativePath(
+                            conversationDirectory,
+                            conversationFile,
+                        ),
+                    ),
+                );
 
                 // Check relationship file for a matching internal chat ID
                 try {
@@ -725,7 +732,7 @@ async function promptProcessorTryWorkingDirectoryBaseNameLookupInRelationshipFil
             }
         }
     } catch (error) {
-        console.error("Error reading relationship file:", error);
+        console.error("promptProcessorTryWorkingDirectoryBaseNameLookupInRelationshipFile error:", error);
     }
 }
 
@@ -771,7 +778,7 @@ async function promptProcessorMatchICIDInRelationshipFile(
         }
 
     } catch (error: any) {
-        console.error(`Error occurred while reading relationship file: ${error.message}`);
+        console.error(`promptProcessorMatchICIDInRelationshipFile error: ${error.message}`);
     }
 }
 
@@ -889,7 +896,14 @@ async function scanForConversationFileThruFullConversationDirectoryScan(
         // Check for the embedded ICID
         if (internalChatIDPattern.test(conversationJson)) {
 
-            setConversationFileName(normalizeJsonFileName(basename(conversationFile)));
+            setConversationFileName(
+                normalizeJsonFileName(
+                    getConversationRelativePath(
+                        conversationDirectory,
+                        conversationFile,
+                    ),
+                ),
+            );
 
             break;
         }
@@ -911,7 +925,14 @@ async function scanForConversationFileThruFullConversationDirectoryScan(
                 clientInput.length > 0 &&
                 input.startsWith(clientInput)
             ) {
-                setConversationFileName(normalizeJsonFileName(basename(conversationFile)));
+                setConversationFileName(
+                    normalizeJsonFileName(
+                        getConversationRelativePath(
+                            conversationDirectory,
+                            conversationFile,
+                        ),
+                    ),
+                );
 
                 break;
             }
@@ -1014,7 +1035,7 @@ async function scanForConversationFileThruFullConversationDirectoryScan(
         }
 
     } catch (error: any) {
-        console.error(`scanForConversationFileThruFullConversationDirectoryScan() error: ${error.message}`);
+        console.error(`scanForConversationFileThruFullConversationDirectoryScan error: ${error.message}`);
     } finally {
         await releaseLock(lockFile, functionName);
     }
@@ -1595,7 +1616,7 @@ export async function maybeCreateACoordinationReadyFileAndAcquireLockFile(
                     // If an operation is supplied we wait 2000ms
                     const delay = operation
                             ? 2000  // True = we were supplied an actual function to execute (editting the conversation file.json) must timeout for 2000ms
-                            : 0; // False = no function was supplied, we're just a placeholder just cycle through
+                            : 10; // False = no function was supplied, we're just a placeholder just cycle through
                 
                     // This timeout is to circumvent LM Studio's behavior
                     setTimeout(async () => {
@@ -1616,7 +1637,7 @@ export async function maybeCreateACoordinationReadyFileAndAcquireLockFile(
                 clearInterval(pollForAssistantUpdate);
 
                 console.error(
-                    "Error polling for assistant update:",
+                    "maybeCreateACoordinationReadyFileAndAcquireLockFile error:",
                     error,
                 );
             }
@@ -1681,9 +1702,19 @@ async function createPseudoWaitTimeForContextCleanupPlugin (
             clearInterval(pollForAssistantUpdate);
 
             console.error(
-                "Error polling for assistant update:",
+                "createPseudoWaitTimeForContextCleanupPlugin error:",
                 error,
             );
         }
     }, pollInterval);
+}
+
+function getConversationRelativePath(
+    conversationsDirectory: string,
+    conversationFilePath: string,
+): string {
+    return relative(
+        conversationsDirectory,
+        conversationFilePath,
+    ).split(path.sep).join("/");
 }
