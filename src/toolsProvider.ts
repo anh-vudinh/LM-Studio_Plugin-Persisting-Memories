@@ -369,14 +369,14 @@ export async function toolsProvider(
             `This tool is used for when the user wants the assistant to display to them the table of memories.` +
             `The table of memories only contains metadata and summaries of memory files.` +
             `This tool is not meant to be used unless explicitly called for by the user.` +
-            `Always first ask for the user to clarify which specific Memories Table they would like to look up; their options are TOM_A-I, TOM_J-R, TOM_S-Z.`,
+            `Always first ask for the user to clarify which specific Memories Table they would like to look up; their options are TOM_A-J, TOM_K-Q, TOM_R-Z.`,
             
         parameters: {
             tableToLookUp: z
             .string()
             .trim()
             .min(1)
-            .describe("Available Memories Tables: 'TOM_A-I', 'TOM_J-R', 'TOM_S-Z'"),
+            .describe("Available Memories Tables: 'TOM_A-J', 'TOM_K-Q', 'TOM_R-Z'"),
         },
 
         implementation: async (params: {

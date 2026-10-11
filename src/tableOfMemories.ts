@@ -42,9 +42,9 @@ async function createTableOfMemories(
     memoriesDirectory: string,
 ): Promise<void> {
     const tableNames = [
-        "TOM_A-I.json",
-        "TOM_J-R.json",
-        "TOM_S-Z.json", // Special characters will live in S-Z.
+        "TOM_A-J.json",
+        "TOM_K-Q.json",
+        "TOM_R-Z.json", // Special characters will live in R-Z.
     ];
 
     for (const tableName of tableNames) {
@@ -115,11 +115,11 @@ async function initializeTableOfMemoriesFromLegacyPluginVersion(
             const firstCharacter = category.name[0].toUpperCase();
 
             const tomFileName =
-                firstCharacter >= "A" && firstCharacter <= "I"
-                    ? "TOM_A-I.json"
-                    : firstCharacter >= "J" && firstCharacter <= "R"
-                        ? "TOM_J-R.json"
-                        : "TOM_S-Z.json";
+                firstCharacter >= "A" && firstCharacter <= "J"
+                    ? "TOM_A-J.json"
+                    : firstCharacter >= "K" && firstCharacter <= "Q"
+                        ? "TOM_K-Q.json"
+                        : "TOM_R-Z.json";
 
             const tomFilePath = path.join(
                 memoriesDirectory,
@@ -374,11 +374,11 @@ export async function updateTableOfMemoriesIncrementally(
         const firstCharacter = category[0].toUpperCase();
 
         const tomFileName =
-            firstCharacter >= "A" && firstCharacter <= "I"
-                ? "TOM_A-I.json"
-                : firstCharacter >= "J" && firstCharacter <= "R"
-                    ? "TOM_J-R.json"
-                    : "TOM_S-Z.json";
+            firstCharacter >= "A" && firstCharacter <= "J"
+                ? "TOM_A-J.json"
+                : firstCharacter >= "K" && firstCharacter <= "Q"
+                    ? "TOM_K-Q.json"
+                    : "TOM_R-Z.json";
 
         const tomFilePath = path.join(
             memoriesDirectory,
@@ -507,11 +507,11 @@ export async function deleteMemoryFromTableOfMemories(
     const firstCharacter = category[0].toUpperCase();
 
     const tomFileName =
-        firstCharacter >= "A" && firstCharacter <= "I"
-            ? "TOM_A-I.json"
-            : firstCharacter >= "J" && firstCharacter <= "R"
-                ? "TOM_J-R.json"
-                : "TOM_S-Z.json";
+        firstCharacter >= "A" && firstCharacter <= "J"
+            ? "TOM_A-J.json"
+            : firstCharacter >= "K" && firstCharacter <= "Q"
+                ? "TOM_K-Q.json"
+                : "TOM_R-Z.json";
 
     const tomFilePath = join(memoriesDirectory, tomFileName);
     const fileName = `${category}/${filename}`;
@@ -541,9 +541,9 @@ export async function tableOfMemoriesSummariesLookup(
     const memoriesDirectory = await memoryStore.getMemoriesDirectory();
 
     const tomFileNames = [
-        "TOM_A-I.json",
-        "TOM_J-R.json",
-        "TOM_S-Z.json",
+        "TOM_A-J.json",
+        "TOM_K-Q.json",
+        "TOM_R-Z.json",
     ];
 
     // Load all TOM entries into memory.
@@ -805,9 +805,9 @@ export async function tableOfMemoriesDirectLookup(
         await memoryStore.getMemoriesDirectory();
 
     const validTomFiles = [
-        "TOM_A-I",
-        "TOM_J-R",
-        "TOM_S-Z",
+        "TOM_A-J",
+        "TOM_K-Q",
+        "TOM_R-Z",
     ];
 
     const normalizedTomName = tomName
