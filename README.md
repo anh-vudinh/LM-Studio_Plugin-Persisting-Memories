@@ -30,7 +30,7 @@ Tested working on Windows 11 Pro 25H2 - LM Studio 0.4.24
 
    <details>
    <summary>Click to expand image of Initialize Table of Memories Tooltip</summary>
-   <img src="screenshots\init-table-of-memories-tooltip.jpg" alt="Image of Initialize Table of Memories Tooltip">
+   <img src="screenshots\Init-table-of-memories-tooltip.jpg" alt="Image of Initialize Table of Memories Tooltip">
    </details>
    <br>
 
