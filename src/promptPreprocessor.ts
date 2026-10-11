@@ -6,6 +6,7 @@ import { memoryStore } from "./memoryStore";
 import { removeMemorySeeds } from "./removeMemorySeeds";
 import { saveMemoryTextCheckerExtractorConstructor } from "./saveMemoryTextCheckerExtractorConstructor";
 import { join, basename, relative } from "node:path";
+import { tableOfMemoriesMain } from "./tableOfMemories"
 import path from "node:path";
 import os from "os";
 
@@ -25,6 +26,8 @@ import {
     setInternalChatID,
     getConversationFileName,
     setConversationFileName,
+    setController,
+    getController,
 } from "./config";
 
 import { 
@@ -65,6 +68,8 @@ export async function promptPreprocessor(
     const messages = (await getCurrentConversationHistory()).getMessagesArray();
     const userText = userMessage.getText();
     const workingDirectory = ctl.getWorkingDirectory();
+    setController(ctl);
+    const summarizeMemorySeeds = config.get("summarizeMemorySeeds") as boolean;
     let createNewInternalChatID = false;
 
     // Read userText to see if user is trying to save a memory.
@@ -261,7 +266,7 @@ export async function promptPreprocessor(
         // New valid seeds waiting to be injected
         if (newMemorySeeds.length > 0) {
 
-            injectedContext = await promptProcessorConstructMemoriesToInject(newMemorySeeds, memoriesDirectory);
+            injectedContext = await promptProcessorConstructMemoriesToInject(newMemorySeeds, memoriesDirectory, summarizeMemorySeeds);
         }
     }
 
@@ -337,6 +342,8 @@ export async function promptPreprocessor(
     // Reset the state after the check in removing seeds
     // so the next user message can update the upcoming state.
     setIsRemovingMemorySeedsQueued(false);
+
+    await tableOfMemoriesMain();
 
     // Already tested the order of content, it did not improve abilities of model to adhere to rules.
     // Models forget/disregard things when they want to and take anything as suggestions if they want too.
@@ -1198,6 +1205,7 @@ async function promptProcessorConversationFileScanForPreviousSeeds(
 async function promptProcessorConstructMemoriesToInject(
     newMemorySeeds: string[],
     memoriesDirectory: string,
+    summarizeMemorySeeds: boolean,
 ): Promise<string>{
 
     let createdInjectedContext = "";
@@ -1265,6 +1273,8 @@ async function promptProcessorConstructMemoriesToInject(
         createdInjectedContext +=
             `DATE: Between ${earliestDate} - ${latestDate}\n\n`;
 
+        const memoryBlockContentStart = createdInjectedContext.length;
+
         // We group similar Q & A under the same topic
         // as to not waste tokens appending a topic to each exchange
         const topics =
@@ -1319,6 +1329,20 @@ async function promptProcessorConstructMemoriesToInject(
             topicNumber += 1;
         }
 
+        // Reconstructs the contents to a summary instead.
+        if (summarizeMemorySeeds) {
+            const memoryBlockContent = createdInjectedContext.slice(
+                memoryBlockContentStart,
+            );
+
+            const summarizedContent = await modelCallToSummarizeMemorySeed(memoryBlockContent);
+
+            createdInjectedContext =
+                createdInjectedContext.slice(0, memoryBlockContentStart) +
+                summarizedContent +
+                "\n\n";
+        }
+
         // Indicates the end of the memory block
         createdInjectedContext +=
             `[END ${memorySeed}]\n\n`;
@@ -1337,6 +1361,41 @@ async function promptProcessorConstructMemoriesToInject(
     setConfigSchematics({memorySeedsSelected: getMemorySeedsSelected()});
 
     return createdInjectedContext;
+}
+
+async function modelCallToSummarizeMemorySeed(
+    memoryBlockContent: string,
+): Promise<string> {
+    const client = getController().client;
+    const model = await client.llm.model();
+    
+    const prompt = `
+        The user needs you the assistant to rigorously condense the following MESSAGE HISTORY exchange between a user and assistant.
+
+        Discard anything that seems repetitive, minor, or of little value. Do not lose any important details of the exchange. Return a string.
+
+        [BEGINNING OF MESSAGE HISTORY]: 
+        ${memoryBlockContent}
+        [END OF MESSAGE HISTORY]
+        `.trim();
+
+    const result = await model.respond(
+        prompt,
+        {
+            temperature: 0,
+        },
+    );
+
+    const cleanedText = result.content
+        .replace(
+            /^[\s\S]*?__LM_STUDIO_INTERNAL_LSEP_SYNTHETIC_REASONING_END_[A-Za-z0-9]+__/i,
+            "",
+        )
+        .replace(/^[\s\S]*?```(?:json)?\s*/i, "")
+        .replace(/\s*```[\s\S]*$/i, "")
+        .trim();
+
+    return cleanedText;
 }
 
 /**
@@ -1527,18 +1586,17 @@ export async function maybeCreateACoordinationReadyFileAndAcquireLockFile(
         (plugin: string) => plugin.includes("context-cleanup"),
     );
 
-    const hasPersistingMemories = enabledPluginsArray.some(
-        (plugin: string) => plugin.includes("persisting-memories"),
+    const hasCompactASummary = enabledPluginsArray.some(
+        (plugin: string) => plugin.includes("compact-a-summary"),
     );
+
+    const shouldPrepareReadyFile = hasContextCleanup || hasCompactASummary;
+
+    const runningSolo = !hasContextCleanup && !hasCompactASummary;
 
     const originalAssistantLastMessagedAt = conversation.assistantLastMessagedAt;
 
-    const shouldCoordinateWithContextCleanup =
-        hasContextCleanup && hasPersistingMemories;
-
-    if (shouldCoordinateWithContextCleanup) {
-
-        const readyFile = `${conversationFile}.persisting-memories-final-write.ready`;
+    if (shouldPrepareReadyFile) {
 
         // Creating the Psudeo wait time polling
         // Ordering matters here, acquire the .lock before creating the ready file for Context Cleanup Plugin to consume.
@@ -1546,58 +1604,24 @@ export async function maybeCreateACoordinationReadyFileAndAcquireLockFile(
             originalAssistantLastMessagedAt,
             conversationFile,
             lockFunctionName,
-            shouldCoordinateWithContextCleanup,
+            shouldPrepareReadyFile,
             operation
         )
-
-        try {
-            const handle = await open(readyFile, "wx");
-            await handle.close();
-
-            // console.log(
-            //     "===== PM final-write ready file created =====",
-            //     readyFile,
-            //     Date.now()
-            // );
-        } catch (error) {
-            const fsError = error as NodeJS.ErrnoException;
-
-            if (fsError.code !== "EEXIST") {
-                throw error;
-            }
-
-            await unlink(readyFile);
-
-            // console.log(
-            //     "===== stale PM final-write ready file removed =====",
-            //     readyFile,
-            //     Date.now()
-            // );
-
-            const handle = await open(readyFile, "wx");
-            await handle.close();
-
-            // console.log(
-            //     "===== PM final-write ready file recreated =====",
-            //     readyFile,
-            //     Date.now()
-            // );
-        }
+        
+        createAReadyFile(conversationFile);
     }
 
     // Look in createPseudoWaitTimeForContextCleanupPlugin() if you're looking for the coordination logic function calls,
     // that includes executing functions during coordination.
     // No need for the ready File, we are not coordinating just acquire a lock file, 
     // to protect our duration for editing.
-    if (!shouldCoordinateWithContextCleanup) {
+    if (runningSolo) {
 
         const lockFile = `${conversationFile}.lock`;
 
         await acquireLock(lockFile, lockFunctionName);
 
-        const pollInterval = shouldCoordinateWithContextCleanup === true
-            ? 500   // interval when another plugin created the lock file, shorter interval to act timely
-            : 100;  // interval when this plugin created the lock file, longer interval to save resources
+        const pollInterval = 500;
 
         // Initiated polling until assistantLastMessagedAt value changes
         // then initiate the conversation json overwrite
@@ -1652,7 +1676,7 @@ async function createPseudoWaitTimeForContextCleanupPlugin (
     originalAssistantLastMessagedAt: any,
     conversationFile: string,
     lockFunctionName: string,
-    shouldCoordinateWithContextCleanup: boolean,
+    shouldPrepareReadyFile: boolean,
     operation?: () => Promise<void>,
 ): Promise<void> {
 
@@ -1660,7 +1684,7 @@ async function createPseudoWaitTimeForContextCleanupPlugin (
 
     await acquireLock(lockFile, lockFunctionName);
 
-    const pollInterval = shouldCoordinateWithContextCleanup === true
+    const pollInterval = shouldPrepareReadyFile === true
             ? 100   // shorter interval to act timely
             : 500;  // interval when this plugin created the lock file, longer interval to save resources
 
@@ -1678,7 +1702,7 @@ async function createPseudoWaitTimeForContextCleanupPlugin (
             if (latestConversation.assistantLastMessagedAt !== originalAssistantLastMessagedAt) {
                 clearInterval(pollForAssistantUpdate);
 
-                const delay = shouldCoordinateWithContextCleanup === true
+                const delay = shouldPrepareReadyFile === true
                         ? 2000  // True = this plugin has the lead, and will be the one to enforce the 2000ms wait time
                         : 10; // False = another plugin has the lead, they will wait the 2000ms we fire off immediately
             
@@ -1717,4 +1741,45 @@ function getConversationRelativePath(
         conversationsDirectory,
         conversationFilePath,
     ).split(path.sep).join("/");
+}
+
+async function createAReadyFile(
+    conversationFile: string,
+): Promise<void> {
+
+    const readyFile = `${conversationFile}.persisting-memories-final-write.ready`;
+    
+    try {
+        const handle = await open(readyFile, "wx");
+        await handle.close();
+
+        // console.log(
+        //     "===== PM final-write ready file created =====",
+        //     readyFile,
+        //     Date.now()
+        // );
+    } catch (error) {
+        const fsError = error as NodeJS.ErrnoException;
+
+        if (fsError.code !== "EEXIST") {
+            throw error;
+        }
+
+        await unlink(readyFile);
+
+        // console.log(
+        //     "===== stale PM final-write ready file removed =====",
+        //     readyFile,
+        //     Date.now()
+        // );
+
+        const handle = await open(readyFile, "wx");
+        await handle.close();
+
+        // console.log(
+        //     "===== PM final-write ready file recreated =====",
+        //     readyFile,
+        //     Date.now()
+        // );
+    }
 }

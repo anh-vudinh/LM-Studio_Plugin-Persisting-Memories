@@ -1,6 +1,6 @@
 # Persisting Memories Plugin for LM Studio
 
-Model dependent has the advantage of performing snappier, but it's trade off is that the model has more control over the process, so depending on behavior it's reliability may vary. I've taken extra steps in this latest release to take a compromising approach to addressing this unreliableness beyond trying to tune prompts. Read in my [Technical Details New Section.](#technical-details).
+Model dependent has the advantage of performing snappier, but it's trade off is that the model has more control over the process, so depending on behavior it's reliability may vary. I've taken extra steps in this latest release to take a compromising approach to addressing this unreliableness beyond trying to tune prompts.
 
 - **This Plugin (model behavior dependent)** - [GithHub](https://github.com/anh-vudinh/LM-Studio_Plugin-Persisting-Memories) | [LMStudio](https://lmstudio.ai/anhuvdinh/persisting-memories)
 
@@ -12,63 +12,48 @@ Persisting Memories Plugin is an LM Studio plugin that lets users preserve selec
 
 Tested working on Windows 11 Pro 25H2 - LM Studio 0.4.24
 
-## Bug fix (10/3/2026)
+## New/Updated (10/10/2026)
 
-1) I thought I had accounted for the conversation file sitting within a nested folder, turns out I did not finish up the full implementation. My plugin could find the nested file but couldn't path to it afterwards if it were nested. It assumed the file was directly living in conversations root folder. The logic has now been finished up so you can organize your conversations into sub folders and the plugin should be able to still pin point it.
-
-## New/Updated (10/2/2026)
-
-1) Added batch memory save, `save memory <message #> to <message #>; category <category>; name <name>`.
-    User messages that are just save memory commands will be filtered out and not saved to the file during the batch process.
-    <details>
-    <summary>Click to expand image of batch memories save</summary>
-    <img src="chat-save-batch-memories.jpg" alt="Image of batch save memories">
-    </details>
-<br>
-
-2) Added wild card behavior to injecting memory seeds. `<category_folder>/*.json` will inject all memory files within that category folder.
-    Users will not be allowed to create a fle named `*` or `*.json` to protect this feature. (memory/file names like `few*many` will be allowed)
-    <details>
-    <summary>Click to expand image of batch memories inject</summary>
-    <img src="chat-batch-memories-inject.jpg" alt="Image of batch memories inject">
-    </details>
-<br>
-
-3) Added wild card behavior to deleting memories. `<category_folder>/*.json` will delete that entire category folder. Be warned, the moment you complete that name to delete up to the last `n` of `.json` and it is a valid existing folder, it's gone, there is no recovery.
+1) The user controls the memory seeds they save, which is sorted by the user's choice too. The table of memories, when first initialized, will send every memory file through the model to extract keywords and provide a summary that best defines the contents of that memory file. Those values will then be added to one of three table of memories files living in the `~\.lmstudio\memories` folder.
    <details>
-   <summary>Click to expand Picture of category wild card delete.</summary>
-   <img src="category-wildcard-delete.jpg" alt="Image of wildcard delete">
+   <summary>Click to expand image of tom file</summary>
+   <img src="screenshots\example-of-tom-file.jpg" alt="Image of tom file">
    </details>
-<br>
+   <br>
 
-4) Standarized save memory regex between the this plugin and my other explicit and context cleanup plugins.
-
-5) Imported the more advanced acquirelock and my improved ICID and CFN scan logics.
-
-6) Loosened some constraints on a failing save memory condition where user's message was a save command or meta data that was fully scrubbed. Fixed the placement of the input scrubbing, I was cleaning the input too early in the chain. Loosening it so it would not be corrected at the first step but at the last step.
-
-7) Moved some variables to module-level states living in config.ts
-
-8) The following isn't new but I never specifically went over them and think users should know the leeway and options they have for the spelling of the save command.
-   
-   *(Example: ***svmem4*** will be accepted and so will with ***store mmry msg4***. the category is apple). Batch memory save requires a variation of through/to as a trigger and ending message number*
+2) **!! IMPORTANT !!** Users are expected to send a one time user message with "Initialize Table of Memories" toggled ON. You must only do this once. This will create the TOM files and populate their fields with your memories created by older versions of this plugin. After this one time run, you should leave the option toggled OFF. The reason why is because the process can be expensive depending on how many memory files you have. You do not want to be initializing all your memories every turn. You do not have to worry that in the future the TOM becomes outdated as you add brand new memories or update old memories. The TOM will be maintained with the recent additions to the backend logic even while the "Initialize Table of Memories" remains off. The toggle will remain for future versions because it can still serve as a function to fully repair your TOM if you suspect it to be missing, corrupted, or inaccurate.
+   <details>
+   <summary>Click to expand image of tom control panel</summary>
+   <img src="screenshots\tom-control-panel.jpg" alt="Image of tom control panel">
+   </details>
+   <br>
 
    <details>
-   <summary>Click to expand Picture of Save Memory command verbage</summary>
-   <img src="save-memory-command-variations.jpg" alt="Image of save command variations">
+   <summary>Click to expand image of Initialize Table of Memories Tooltip</summary>
+   <img src="screenshots\init-table-of-memories-tooltip.jpg" alt="Image of Initialize Table of Memories Tooltip">
    </details>
-<br>
+   <br>
 
-9) Updated verbage of throwing a hard error when model tries to execute the tool with hallucinated parameters.
+3) As your memory files grow you may forget what's in them. Users can now ask the model to use the plugin to help recall, find, or remember a memory based off of your fuzzy memory. In the backend the model will be given a collection of keywords tied to a memory file provided by the TOM files and asked to choose the top 8 best matches compared to the query. Then the best keyword matching candidates pass along their summaries for the model to determine up to 3 best matches to return to the user. From there once you determined which memory you were looking for, you can inject the memory normally through the "Memories to Inject" field.
    <details>
-   <summary>Click to expand Picture of hard stopping hallucinated parameters</summary>
-   <img src="hard-error-to-stop-hallucinating-parameters.jpg" alt="Image of save hard error thrown">
+   <summary>Click to expand image of memory recall</summary>
+   <img src="screenshots\fuzzy-memory-recall.jpg" alt="Image of memory recall">
    </details>
-<br>
+   <br>
+
+4) Another method to find your memories is to look at the table yourself. You can ask the assistant to look up, fetch, get the memories table. It technically should ask you to specify which table before actually fetching it, but some models might just make assumptions and grab any table. Your options are TOM_A-I, TOM_J-R, TOM_S-Z. All non-alphabet characters will be stored in TOM_S-Z. You do not have to type it exactly, a model "should" understand tomjr refers to TOM_J-R. Just rememeber doing so brings all entries of the TOM request into context, this can consume a large amount of your context window depending on how many unique memory files you have stored. I recommend leaving the tool table_of_memories_lookup OFF if you do not actively needed it. Handing a misbehaving model a tool could mean it spams it and gives you any excuse it wants to avoid accountability.
+   <details>
+   <summary>Click to expand image of direct lookup of TOM contents</summary>
+   <img src="screenshots\table-of-memories-lookup.jpg" alt="Image of direct lookup of TOM contents">
+   </details>
+   <br>
+
+5) Added Summarize All Memories Injected feature. This will summarized/condense any future memories you inject (does not apply retroactively), rather than injecting the memory seed verbatum. Results may vary, all memory seeds in the same file will most likely be consolidated into one big narrative unless they're distinctly different. Regardless it should save some context window compared to the verbatum approach. Just consider the feature as "there if you want it" you may find it useful for your needs. The feature does cause a delay to process and formulate the summaries before it's injection so it is not as quick as injecting the memory seed verbatum.
+
 
 ## Final Thoughts
 
-I believe I've made this plugin's features rich enough to cover any angle a user might want to utilize or try and break this plugin through typical use. I'm also out of ideas of any avenues of expansion. Really the only two big flaws are on LM Studio's part, 1) No pathway to update the plugin-UI in real-time, and 2) The 2 second window after the assistant's lastest response must be respected or any updates will be overwritten by a cached version. Those are beyond my control. Unless LM Studio fixes those quirks this is probably the final version I'm sticking with unless I spot bugs during my personal use.
+I was in the process of making a compact a summary plugin that would automatically compact/summarize a chat session after a certain threshold was met but I found unreliableness from the model to prepare jsons that accurately summarized the entire chat being stashed and truncated, I dislike unreliableness so I put the idea on hiatus for now. Maybe I'll come to terms with it eventually. Long story short, I decided to bring some of those ideas to this persisting memories plugin. If you think about it my persisting memories plugin and context cleanup paired together somewhat achieves the same concept. The real difference is that it's not automatic, you have to "summarize" yourself by saving the memory seeds you deemed important, choose which seeds to inject, and configure the truncation with my context cleanup.
 
 ## Table of Contents
 
@@ -120,7 +105,7 @@ If you forget the category or name the model should ask for it before running th
 
 <details>
 <summary>Click to expand image</summary>
-<img src="memory-seed-json.jpg" alt="Image of memory-seed-json">
+<img src="screenshots\memory-seed-json.jpg" alt="Image of memory-seed-json">
 </details>
 
 ## How It Works
@@ -128,35 +113,66 @@ If you forget the category or name the model should ask for it before running th
 ### Prompt Preprocessing
 
 1. Through the use of prompt preprocessing, the memory seed is injected alongside the user's message on the newest user's turn.
+
 2. The added text will now be able to be referenced by the assistant.
+
+3. Inject all memory files within that category folder with `<category_folder>/*.json`.
+   Users will not be allowed to create a fle named `*` or `*.json` to protect this feature. (memory/file names like `few*many` will be allowed)
+   <details>
+   <summary>Click to expand image of batch memories inject</summary>
+   <img src="screenshots\chat-batch-memories-inject.jpg" alt="Image of batch memories inject">
+   </details>
+   <br>
+
 
 ### Saving a Memory
 
 <details>
 <summary>Click to expand image</summary>
-<img src="chat_save_memory_example.jpg" alt="Image of Chat">
+<img src="screenshots\chat_save_memory_example.jpg" alt="Image of Chat">
 </details>
 
 When the user see's a message they wish to keep as a memory, they can call on the save_memory tool by saying this to the assistant
 
-1. User says: save memory message #, category **category_name**, name **memory_name** 
-2. If category and name are not provide during the initial request the assistant "should" stop to ask for that data.
+1. User says: `save memory #`, category <**category_name**>, name <**memory_name**>
+   - `save memory message #` works too.
+   - Usable delimiters are `;` or `,` or `.`
+   - Keywords required as a prefix to be included are `category` and/or `name`.
+
+2. Batch memory save. `save memory <message #> to <message #>; category <category>; name <name>`.
+   User messages that are just save memory commands will be filtered out and not saved to the file during the batch process.
+   <details>
+   <summary>Click to expand image of batch memories save</summary>
+   <img src="screenshots\chat-save-batch-memories.jpg" alt="Image of batch save memories">
+   </details>
+   <br>
+
+3. If category and/or name are not provided during the initial user message, the user will be asked in the following assistant message.
 
 ### Removing or Deleting a Memory
 
 <details>
 <summary>Click to expand image</summary>
-<img src="plugin-control-panel-delete-or-remove-memory.jpg" alt="Image of plugin-delete-or-remove">
+<img src="screenshots\plugin-control-panel-delete-or-remove-memory.jpg" alt="Image of plugin-delete-or-remove">
 </details>
 
 Removing and deleting are two distinct actions. Remove means your intention is to remove the memory from the current chat session's context. Deleting means to permanently discard the memory.
 
 1. To remove: Just press the x on the memory bubble under the Selected Memories section. Memories not listed in Selected Memories are either not in context or were removed form context.
+
 2. To delete: Copy and paste the exact memory name into the Delete Memory text field. It should instantly delete the memory. The plugin will not update Available Memories unless it's reinitialized. But for all future purposes the deleted memory will no longer be usable.
+
+3. To delete a whole category: `<category_folder>/*.json`. Be warned, the moment you complete that name to delete up to the last `n` of `.json` and it is a valid existing folder, it's gone, there is no recovery.
+   <details>
+   <summary>Click to expand Picture of category wild card delete.</summary>
+   <img src="screenshots\category-wildcard-delete.jpg" alt="Image of wildcard delete">
+   </details>
+   <br>
+
 
 ## Configuration
 
-<img src="plugin-control-panel.jpg" alt="Image of Plugin Control Panel">
+<img src="screenshots\plugin-control-panel.jpg" alt="Image of Plugin Control Panel">
 
 | Field | Purpose |
 | --- | --- |
@@ -168,16 +184,28 @@ Removing and deleting are two distinct actions. Remove means your intention is t
 
 ## Conversation Numbering
 
-<img src="chat-message-N.jpg" alt="Image of Chat Message">
+<img src="screenshots\chat-message-N.jpg" alt="Image of Chat Message">
 
 While enabled the plugin will force the assistant to append a message # after each of it's responses.
 This numbering makes it easier for users to refer to a specific exchange when asking to save a memory.
 
 ## Technical Details
 
-> NEW SECTION
+- Save memory regex patterns
+   *(Example: ***svmem4*** will be accepted and so will with ***store mmry msg4***. the category is apple). Batch memory save requires a variation of through/to as a trigger and ending message number*
 
-- Now compatible with the latest release of my Context Cleanup Plugin.
+   <details>
+   <summary>Click to expand Picture of Save Memory command verbage</summary>
+   <img src="screenshots\save-memory-command-variations.jpg" alt="Image of save command variations">
+   </details>
+<br>
+
+- Hard error to prevent model from executing the tool with hallucinated parameters.
+   <details>
+   <summary>Click to expand Picture of hard stopping hallucinated parameters</summary>
+   <img src="screenshots\hard-error-to-stop-hallucinating-parameters.jpg" alt="Image of save hard error thrown">
+   </details>
+<br>
 
 - Instead of letting the model gather all the parameters and hope it registers it as the correct parameters, I've taken a new middle ground approach. When the backend sees that the user is trying to save a memory, it will wait to gather all the parameters. Once all the parameters (message #, category name, memory name) are known, the plugin will reconstruct the exact save memory command string to feed to the model. It will give all the gathered parameters in the correct format.
 
@@ -193,7 +221,6 @@ This numbering makes it easier for users to refer to a specific exchange when as
 
 - If you start discussing things within the assistant's no-go-zones and don't relent, your model may get tied up into an intolerant-reject-your-demands/requests pattern, there is a high chance it will start disregarding even simple demands like the formatting instructions even if it's sent every user turn. What I have seen that was mostly successful is if the assistant has been refusing to append the message number. You directly tell it to start following the formatting instructions again. It will resume once it's out of it's rejection mood.
 
-> OLD SECTION
 - A memories folder will be created at `C:\Users\USERNAME\.lmstudio`, and a `.json` file that retains the relationship between the chat session and its conversation file will be stored in `C:\Users\USERNAME\.lmstudio\conversations`.
 
 - Injection markers: memories will be injected within blocks of BEGIN and END markers containing the memory seed category/memory_name. These markers allow for later removal of the memory.
@@ -216,13 +243,3 @@ This numbering makes it easier for users to refer to a specific exchange when as
 - LM Studio's SDK does not have full support to make this implementation easy. The methods chosen to accomplish this feature was mandatory during the time of creation of this plugin.
 - The plugin assumes LM Studio Windows 11 conversation files are accessible under the configured root directory at `C:\Users\USERNAME\.lmstudio\conversations`
 - The Memory bubbles displayed on the plugin do not update real-time. Again another limitation of LM Studio not giving a way to send updated data upstream back to the plugin UI. The memory bubbles will update when the tool reinitializes, so when it's left idle for awhile then interacted with, or if you click the trashcan "reset" button. There are already validation checks in the backend to prevent any bugs, so don't worry about it. If you choose memories that aren't available, nothing will happen. If you add, remove, or delete memories that aren't active or exist, nothing will break. It'll just be a visual bug of the UI that will refresh upon it's next initialization.
-
-
-<details>
-<summary>Click to expand Legacy Content</summary>
-
-## Why such a drastic change in the final release
-
-- Unfortunately when I thought the plugin was ready for release I noticed some glaring bugs. The biggest cause of this was LM Studio's random behavior to reinitialize the plugin whenever it wanted to and the memory seeds not reliably being cleansed. It was like LM Studio was fighting to constantly overwrite with a cached version. When the timing was perfect the changes finalized which was what I saw in my limited testing when the code functionality was small. When it wasn't perfect, which was most the time as the code grew, LM Studio kept overwriting the cleansed copy with a version it had in cache and reviving the memory seeds, which then would be a constant war between LM Studio and my code to remove/replant/remove/replant. After a break I decided I didn't want to continue with some patch job or keep tweaking knobs until it worked, and proceeded to redo the flow of the prompt preprocessor, the artifacts used to wrap the memories, remove reliance on data states(plugin reinitialization caused loss of states), added a better way to associate the conversation file to the chat, be less reliant on history and favor the conversation file, and pin point the exact window to try and beat LM Studio's default behavior. With a fresh mind, I eventually found it, and it's a 2 seconds window after the assistant has finished it's response. I integrated those new findings and requirements into the final version. The flow has drastically improved and the bugs I was able to find have been stomped out.
-
-</details>

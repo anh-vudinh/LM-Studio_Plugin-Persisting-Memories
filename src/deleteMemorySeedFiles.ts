@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { readdir, unlink, rmdir } from "node:fs/promises";
 import { removeMemorySeedFromPool, getMemorySeedsPool } from "./memorySession";
 import { setConfigSchematics } from "./config"
+import { deleteMemoryFromTableOfMemories } from "./tableOfMemories";
 
 export async function deleteMemorySeedFile(
     memorySeed: string,
@@ -27,6 +28,23 @@ export async function deleteMemorySeedFile(
         // Delete the file if it exist
         try {
             await unlink(memoryFile);
+
+            // The memory file was deleted successfully, so remove its TOM entry.
+            let tomFileName = "";
+
+            try {
+                tomFileName = await deleteMemoryFromTableOfMemories(
+                    memoriesDirectory,
+                    category,
+                    filename,
+                );
+            } catch (error) {
+                console.error(
+                    `Failed to remove "${normalizedMemorySeed}" from ${tomFileName}:`,
+                    error,
+                );
+            }
+
             removeMemorySeedFromPool(normalizedMemorySeed);
             setConfigSchematics({memorySeedsPool: [...getMemorySeedsPool()]});
             
