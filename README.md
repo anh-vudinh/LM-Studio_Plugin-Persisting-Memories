@@ -1,16 +1,22 @@
-# Persisting Memories Plugin for LM Studio
+# (DEPRECATED) Persisting Memories Plugin for LM Studio 
 
 Model dependent has the advantage of performing snappier, but it's trade off is that the model has more control over the process, so depending on behavior it's reliability may vary. I've taken extra steps in this latest release to take a compromising approach to addressing this unreliableness beyond trying to tune prompts.
 
-- **This Plugin (model behavior dependent)** - [GithHub](https://github.com/anh-vudinh/LM-Studio_Plugin-Persisting-Memories) | [LMStudio](https://lmstudio.ai/anhuvdinh/persisting-memories)
+- **(DEPRECATED) This Plugin (model behavior dependent)** - [GithHub](https://github.com/anh-vudinh/LM-Studio_Plugin-Persisting-Memories) | [LMStudio](https://lmstudio.ai/anhuvdinh/persisting-memories)
 
-- **EXPLICIT version (I recommend this one for reliability)** - [GithHub - Explicit](https://github.com/anh-vudinh/-anh-vudinh-LM-Studio_Plugin-Persisting-Memories-Explicit) | [LMStudio](https://lmstudio.ai/anhuvdinh/persisting-memories-explicit)
+- **EXPLICIT version (USE THIS. has alternative tools mode)** - [GithHub - Explicit](https://github.com/anh-vudinh/-anh-vudinh-LM-Studio_Plugin-Persisting-Memories-Explicit) | [LMStudio](https://lmstudio.ai/anhuvdinh/persisting-memories-explicit)
 
-- **Optional Companion Plugin** - [GithHub - Context Cleanup](https://github.com/anh-vudinh/LM-Studio_Context-Cleanup) | [LMStudio](https://lmstudio.ai/anhuvdinh/context-cleanup) - Useful at renumbering the message number appended at the end of assistant responses. Especially if the assistant loses track and refuses to correct itself.
+- **Optional Companion Plugin** - [GithHub - Context Cleanup](https://github.com/anh-vudinh/LM-Studio_Context-Cleanup/releases/tag/v3.6) v3.6 is the last compatible version for this. v4.0+ is made for the explicit version.
 
 Persisting Memories Plugin is an LM Studio plugin that lets users preserve selected assistant responses as reusable memory seeds and inject those memories into future conversations. It stores memories as local JSON files, organizes them by category, and uses prompt preprocessing to add selected memories to the active prompt when needed.
 
 Tested working on Windows 11 Pro 25H2 - LM Studio 0.4.24
+
+# (DEPRECATED 10/26/2026) USE MY EXPLICIT VERSION. It has a tools call mode and updated features.
+
+This plugin works as-is, but will be lacking in features and ability compared to my current explicit plugin. This will be this version's final state.
+
+The reason I decided to stop with my model behavior version and roll it into a tool calls mode for my explicit version is because my explicit version was requiring more advanced functions compared to my model dependent version. I also gave my explicit version capabilities to offset the previous tradeoff between picking one version over the other. The gap became large enough that I didn't think it feasible to always code first for my explicit version (which I was doing because I liked it better) then chopping out and refactor things to work for the model dependent version. The model depenedent version gains much better functionality from using my explicit functions directly. It also benefits from my improved MEC queue system where now there's really no benefits to the "snappiness" of the model dependent version. Basically if you wish to not wait for the 2 second grace period, those unresolved turns will just queue up until you give it an opportunity then it will resolve any previous turns in one quick write. [GithHub - Explicit](https://github.com/anh-vudinh/ -anh-vudinh-LM-Studio_Plugin-Persisting-Memories-Explicit) [LMStudio - Explicit](https://lmstudio.ai/anhuvdinh/persisting-memories-explicit)
 
 ## New/Updated (10/10/2026)
 
